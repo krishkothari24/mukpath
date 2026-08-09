@@ -15,21 +15,64 @@ Telegram bot ──(1,2)──> mukhpath_dump.json ──(4)──> seed/*.json
 ## 0. Install
 
 ```bash
-pip install -r tools/requirements.txt
-brew install ffmpeg            # only needed if the bot sends voice clips
+./scripts/setup.sh
+source .venv/bin/activate
 ```
 
-Get `api_id` / `api_hash` from https://my.telegram.org (log in with your own
-phone number → API development tools → create an app), then:
+That creates a `.venv` (telethon is a one-off bootstrapping dependency — it
+doesn't belong in your global or conda `base` environment), installs
+`tools/requirements.txt` into it, and copies `.env.example` to `.env`.
 
-```bash
-export TELEGRAM_API_ID=1234567
-export TELEGRAM_API_HASH=abc123...
+Then fill in `.env`:
+
+```
+TELEGRAM_API_ID=1234567
+TELEGRAM_API_HASH=abc123...
 ```
 
-First run prompts for your phone number and a login code. That creates
+Get both from https://my.telegram.org (log in with your own phone number →
+API development tools → create an app). The scraper reads `.env`
+automatically; real environment variables still win if you set them, so
+`TELEGRAM_API_ID=other python3 tools/...` works for a one-off override.
+
+`.env` is gitignored. It holds credentials for *your* Telegram account, not
+the bot's — don't commit or share it.
+
+If the bot turns out to send voice clips you'll also need ffmpeg
+(`brew install ffmpeg`); `setup.sh` warns if it's missing.
+
+First scraper run prompts for your phone number and a login code. That creates
 `mukhpath_scraper_session.session` — a live credential for your account.
 It's gitignored; don't commit or share it.
+
+## The bot's actual shape
+
+From a `--dry-run` against `@nc27mukhpathguidebot`:
+
+```
+/start
+├── "Choose your preferred answer language."
+│     [Transliteration] [English] [Gujarati]      <- global mode
+└── "Your main menu is ready."
+      [Open Mukhpath Material]  <- the only content branch
+      [Practice] [Progress] [Language] [Help]     <- bot features, skipped
+      [Quiz] [Polls] [Reset]                      <- never pressed
+```
+
+Three things follow from this:
+
+**Reset, Quiz and Polls are never pressed.** This is someone else's bot
+holding real user state — Reset wipes your progress, and Quiz/Polls submit
+answers and votes. The scraper refuses them at the point of click, and
+there's deliberately no flag to override it. `tests/test_buttons.py` pins
+this down against the live menu.
+
+**Answer language is a global mode, not a branch.** It changes what every
+later answer looks like, so it's set once per run with `--language` and you
+do one run per language, into separate dump files.
+
+**Button kinds are mixed** (`{'inline', 'keyboard'}` on the same menu).
+`--mode auto` resolves per button — leave it alone.
 
 ## 1. Map the menu by hand
 
@@ -54,17 +97,43 @@ kind, and exits.
 
 ## 2. Scrape
 
+Start small. One language, one branch, a hard node cap, so you can look at
+the output before committing to a full walk:
+
 ```bash
-python3 tools/mukhpath_scraper.py --max-depth 6
+python3 tools/mukhpath_scraper.py \
+  --branch "Open Mukhpath Material" \
+  --language Gujarati \
+  --max-nodes 15 \
+  --output mukhpath_dump.gujarati.json
+```
+
+Then the full walk per language (drop `--max-nodes`), into separate files:
+
+```bash
+for lang in Gujarati Transliteration English; do
+  python3 tools/mukhpath_scraper.py \
+    --branch "Open Mukhpath Material" \
+    --language "$lang" \
+    --output "mukhpath_dump.${lang}.json"
+done
 ```
 
 Notes:
+
+- `--branch` keeps the walk inside the content tree. Without it you'd walk
+  Practice/Progress/Help too — harmless but pointless. Pass `--strip 1` to
+  the parser afterwards so the branch button doesn't become a text.
 
 - The walk is **replay-based**: for each menu path it re-sends `/start` and
   re-clicks from the top. Slower, but it's the only thing that works if the
   bot tracks conversation state, and it makes runs resumable.
 - Progress is checkpointed to `mukhpath_dump.state.json` after every node.
-  Ctrl-C and re-run to resume; `--no-resume` starts clean.
+  Ctrl-C and re-run to resume; `--no-resume` starts clean. Nodes that
+  errored last time are re-queued on resume, so a re-run retries failures
+  rather than silently doing nothing.
+- If a button isn't found, the error lists what *was* on offer at that
+  point — usually enough to see what the bot actually did.
 - `--delay` (default 1.5s) throttles requests. Don't lower it — the bot is
   someone else's, and Telegram will flood-wait you.
 - Back/Menu-style buttons are skipped so the walk doesn't loop. `--follow-nav`
@@ -86,8 +155,20 @@ unless you pass `--keep`.
 ## 4. Parse into seed data
 
 ```bash
-python3 scripts/parse_dump.py mukhpath_dump.json --text "Basic Mukhpath"
+python3 scripts/parse_dump.py mukhpath_dump.Gujarati.json \
+  --strip 1 --text "Basic Mukhpath"
 ```
+
+`--strip 1` drops the `--branch` button from the front of every path, so the
+real text name lands back at `path[0]`.
+
+**Open question — how the three languages combine.** `verses` wants
+`sanskrit`, `transliteration` and `meaning` on one row, but the bot serves
+one answer language at a time. Whether "Gujarati" changes only the *meaning*
+or also the verse rendering isn't knowable without looking at real output.
+Do the small `--max-nodes 15` run in two languages, diff them, and the
+mapping will be obvious — then the parser gets a merge mode that joins the
+dumps by menu path.
 
 `--text` scopes output to one top-level menu item. Do this: v1 is one
 complete text, not everything at once. Omit it to see what's available (the
@@ -115,13 +196,15 @@ Heuristics, all of them fallible — that's what `review.md` is for:
   `Translation:` starts `meaning`; other Latin lines → `transliteration` if
   there's already scripture to transliterate, else `meaning`.
 
-## Verifying changes to the parser
+## Verifying changes to the tools
 
 ```bash
-python3 tests/test_parse_dump.py
+./scripts/test.sh
 ```
 
-Runs against `tests/fixtures/sample_dump.json` — a hand-written dump shaped
+Neither needs telethon or a Telegram session, so they run anywhere.
+
+`test_parse_dump.py` runs against `tests/fixtures/sample_dump.json` — a hand-written dump shaped
 like real scraper output, covering chrome filtering, multi-verse splitting,
 both scripts, the audio path, and scrape errors. No Telegram needed. Extend
 the fixture with any real-world shape the parser gets wrong.

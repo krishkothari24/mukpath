@@ -176,7 +176,7 @@ def collect_audio(messages):
     return paths
 
 
-def build(nodes, only_text=None):
+def build(nodes, only_text=None, strip=0):
     texts, sections, verses = {}, {}, []
     notes = []
     skipped_chrome = 0
@@ -184,9 +184,17 @@ def build(nodes, only_text=None):
     for node in nodes:
         path = node.get("path") or []
         if node.get("error"):
+            # Reported with the full path, before stripping, so a failure at
+            # the branch root still shows up.
             notes.append(f"- node `{' > '.join(path) or '(root)'}` failed during "
                          f"scrape: {node['error']}")
             continue
+        # Scraping with --branch prefixes every path with the branch button
+        # ("Open Mukhpath Material"), which isn't a text — drop it.
+        if strip:
+            if len(path) <= strip:
+                continue
+            path = path[strip:]
         if not path:
             continue                        # root menu is never content
         text_name = path[0]
@@ -326,6 +334,9 @@ def main(argv=None):
     p.add_argument("dump", nargs="?", default="mukhpath_dump.json")
     p.add_argument("--out", default="seed")
     p.add_argument("--text", help="only emit this top-level text (scope v1 content)")
+    p.add_argument("--strip", type=int, default=0, metavar="N",
+                   help="drop N leading path segments — use --strip 1 when the "
+                        "dump was scraped with --branch")
     args = p.parse_args(argv)
 
     dump_path = Path(args.dump)
@@ -333,7 +344,7 @@ def main(argv=None):
         sys.exit(f"{dump_path} not found — run tools/mukhpath_scraper.py first")
 
     nodes = load_nodes(dump_path)
-    texts, sections, verses, notes, chrome = build(nodes, args.text)
+    texts, sections, verses, notes, chrome = build(nodes, args.text, args.strip)
     if not verses:
         sys.exit("no verses parsed — check the dump, or --text didn't match "
                  f"any top-level menu item ({sorted({n['path'][0] for n in nodes if n.get('path')})})")

@@ -119,6 +119,28 @@ def main():
     check("scoped sections", len(scoped_sections), 2)
     check("scoped verses", len(scoped_verses), 3)
 
+    # --- --strip, for dumps scraped with --branch ---
+    # Every path gains the branch button at the front; --strip 1 removes it
+    # so the real text name lands back at path[0].
+    branched = [dict(n, path=["Open Mukhpath Material"] + (n.get("path") or []))
+                for n in nodes]
+    s_texts, _, s_verses, s_notes, _ = parse_dump.build(branched, strip=1)
+    check("strip restores text ids", sorted(s_texts),
+          ["basic-mukhpath", "satsang-diksha"])
+    check("strip keeps every verse", len(s_verses), len(verses))
+    check_true(
+        "branch button never becomes a text",
+        "open-mukhpath-material" not in s_texts,
+    )
+    check_true(
+        "scrape errors still reported under --strip",
+        any("Broken Branch" in n for n in s_notes),
+    )
+    # Without --strip the branch button would swallow everything into one text.
+    unstripped, _, _, _, _ = parse_dump.build(branched)
+    check("no strip collapses to one text", sorted(unstripped),
+          ["open-mukhpath-material"])
+
     if failures:
         print(f"FAILED ({len(failures)})\n")
         for failure in failures:

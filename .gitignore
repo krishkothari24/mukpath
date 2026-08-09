@@ -1,3 +1,11 @@
+# Real credentials. `.env.example` is the committed template.
+.env
+.env.local
+
+# Virtualenv for the Python bootstrapping tools (scripts/setup.sh).
+.venv/
+venv/
+
 # Telethon auth session — this is a live credential for your Telegram
 # account. Never commit it.
 *.session
@@ -5,8 +13,7 @@
 
 # Raw scraper output and downloaded media. Bulky, regenerable, and per
 # CLAUDE.md must stay out of the shipped app bundle.
-mukhpath_dump.json
-mukhpath_dump.state.json
+mukhpath_dump*.json
 downloads/
 
 __pycache__/
