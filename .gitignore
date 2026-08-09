@@ -24,3 +24,7 @@ __pycache__/
 
 # Phase 1: backend (Node)
 node_modules/
+
+# Claude Code session/worktree scratch state at the repo root only —
+# mobile/.claude/ holds real tracked project config, don't ignore that.
+/.claude/

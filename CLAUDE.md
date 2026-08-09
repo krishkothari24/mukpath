@@ -38,9 +38,13 @@ verses      (id, section_id, sanskrit, transliteration, meaning,
              meaning_chunks)
 users       (id, name, role: parent | kid | teacher, parent_id nullable)
 progress    (user_id, verse_id, status: new|learning|review|mastered,
-             next_review_date, ease_factor, interval_days)
+             next_review_date, ease_factor, interval_days,
+             -- added by the Phase 3 scheduler (migrations 003, 004)
+             repetitions, lapses, started_on, last_reviewed_at)
 goals       (id, user_id, target_type: text|section, target_id,
              target_date)
+-- added by Phase 4 for streak tracking (migration 005)
+review_events (id, user_id, verse_id, grade, reviewed_on, created_at)
 ```
 
 Only Satsang Diksha (10 of 50 verses) has an actual shlok. For the other
@@ -51,7 +55,21 @@ phrase boundaries, for phrase-at-a-time practice and playback.
 `progress` is a Leitner/SM-2 hybrid — new verses + due reviews form the
 daily practice queue. A goal's target_date back-calculates how many new
 verses/day are needed to hit it, and that number feeds the daily queue
-size.
+size. `started_on` is what makes that a *daily* budget rather than a
+per-screen one. The algorithm lives in `backend/src/lib/scheduler.js` and is
+mirrored in `mobile/src/lib/scheduler.ts` so the phone can schedule offline;
+the two must change together.
+
+## Layout
+
+- `mobile/` — the Expo app (Phase 2 onward). Reads all content from a local
+  SQLite cache, never straight from the network; see `mobile/README.md`.
+- `backend/` — Fastify + Postgres API and migrations.
+- `seed/` — Phase 0 content output, loaded by `backend/scripts/seed.js`.
+- `tools/`, `scripts/` — one-off content bootstrapping (Python).
+
+Note the `verses` column names predate the real content: `sanskrit` holds
+Gujarati script, `transliteration` romanised Gujarati, `meaning` English.
 
 ## Conventions
 
