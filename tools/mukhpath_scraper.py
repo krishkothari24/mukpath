@@ -152,7 +152,17 @@ class Scraper:
         self.done = set(state["done"])
         self.queue = state["queue"]
         self.media_seen = state.get("media_seen", {})
-        print(f"resumed: {len(self.done)} nodes captured, {len(self.queue)} queued")
+        # Retry anything that errored last time. Failures are usually
+        # transient (a timeout, a menu that had moved on), and leaving them
+        # marked done means re-running silently does nothing at all.
+        retry = [node["path"] for node in self.nodes.values() if node.get("error")]
+        for path in retry:
+            key = key_for(path)
+            self.done.discard(key)
+            self.nodes.pop(key, None)
+            self.queue.append(path)
+        print(f"resumed: {len(self.done)} nodes captured, {len(self.queue)} queued"
+              + (f" ({len(retry)} retrying after errors)" if retry else ""))
         return True
 
     def save(self):
@@ -255,6 +265,17 @@ class Scraper:
             None,
         )
 
+    @staticmethod
+    def available_labels(messages):
+        """Every button label on offer, newest last, deduped."""
+        labels = []
+        for msg in messages:
+            for row in (msg.buttons or []):
+                for btn in row:
+                    if btn.text not in labels:
+                        labels.append(btn.text)
+        return labels
+
     async def press(self, conv, target, label):
         if is_destructive_button(label):
             # Belt and braces: the walk already filters these out, but this
@@ -275,25 +296,42 @@ class Scraper:
         return await self.drain(conv)
 
     async def navigate(self, conv, path):
-        """Replay `path` from /start. Returns the messages at the end of it."""
+        """Replay `path` from /start. Returns the messages at the end of it.
+
+        Button lookup searches every message seen since /start, not just the
+        reply to the last action. The bot sends its language prompt and its
+        main menu as two separate messages in one batch, so after answering
+        the language prompt the main menu is one message *behind* the latest
+        reply — scoping the search to the latest reply alone loses it.
+        Inline buttons on older messages stay clickable, so this is safe.
+        """
         await conv.send_message("/start")
-        messages = await self.drain(conv)
+        latest = await self.drain(conv)
+        seen = list(latest)
 
         # Answer language is a global mode, not a branch of the tree: it
         # changes what every later answer looks like, so it has to be set
         # once per run before walking. The bot only offers it when it isn't
         # already set, so not finding it is normal.
         if self.args.language:
-            target = self.find_button(messages, self.args.language)
+            target = self.find_button(seen, self.args.language)
             if target is not None:
-                messages = await self.press(conv, target, self.args.language)
+                latest = await self.press(conv, target, self.args.language)
+                seen += latest
 
         for label in path:
-            target = self.find_button(messages, label)
+            target = self.find_button(seen, label)
             if target is None:
-                raise LookupError(f"button '{label}' not offered here")
-            messages = await self.press(conv, target, label)
-        return messages
+                offered = self.available_labels(seen)
+                raise LookupError(
+                    f"button '{label}' not offered here; on offer: "
+                    f"{offered or 'none'}"
+                )
+            latest = await self.press(conv, target, label)
+            seen += latest
+        # Only the final reply is content; everything before it is the
+        # navigation we walked through to get here.
+        return latest
 
     # ---------- the walk ----------
 
@@ -442,6 +480,10 @@ async def amain(args):
                   "once per run.")
             return
         await scraper.run(conv)
+        # Swallow any straggler the bot sends as we finish. Left pending, it
+        # arrives after the conversation has torn down and telethon logs a
+        # noisy (harmless) InvalidStateError traceback.
+        await scraper.drain(conv)
     scraper.save()
     print(f"\nCaptured {len(scraper.nodes)} nodes -> {args.output}")
     if scraper.refused:

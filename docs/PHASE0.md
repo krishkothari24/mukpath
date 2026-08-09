@@ -129,7 +129,11 @@ Notes:
   re-clicks from the top. Slower, but it's the only thing that works if the
   bot tracks conversation state, and it makes runs resumable.
 - Progress is checkpointed to `mukhpath_dump.state.json` after every node.
-  Ctrl-C and re-run to resume; `--no-resume` starts clean.
+  Ctrl-C and re-run to resume; `--no-resume` starts clean. Nodes that
+  errored last time are re-queued on resume, so a re-run retries failures
+  rather than silently doing nothing.
+- If a button isn't found, the error lists what *was* on offer at that
+  point — usually enough to see what the bot actually did.
 - `--delay` (default 1.5s) throttles requests. Don't lower it — the bot is
   someone else's, and Telegram will flood-wait you.
 - Back/Menu-style buttons are skipped so the walk doesn't loop. `--follow-nav`
@@ -195,9 +199,7 @@ Heuristics, all of them fallible — that's what `review.md` is for:
 ## Verifying changes to the tools
 
 ```bash
-python3 tests/test_parse_dump.py
-python3 tests/test_dotenv.py
-python3 tests/test_buttons.py
+./scripts/test.sh
 ```
 
 Neither needs telethon or a Telegram session, so they run anywhere.
