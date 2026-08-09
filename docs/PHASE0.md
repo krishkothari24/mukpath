@@ -15,19 +15,33 @@ Telegram bot ──(1,2)──> mukhpath_dump.json ──(4)──> seed/*.json
 ## 0. Install
 
 ```bash
-pip install -r tools/requirements.txt
-brew install ffmpeg            # only needed if the bot sends voice clips
+./scripts/setup.sh
+source .venv/bin/activate
 ```
 
-Get `api_id` / `api_hash` from https://my.telegram.org (log in with your own
-phone number → API development tools → create an app), then:
+That creates a `.venv` (telethon is a one-off bootstrapping dependency — it
+doesn't belong in your global or conda `base` environment), installs
+`tools/requirements.txt` into it, and copies `.env.example` to `.env`.
 
-```bash
-export TELEGRAM_API_ID=1234567
-export TELEGRAM_API_HASH=abc123...
+Then fill in `.env`:
+
+```
+TELEGRAM_API_ID=1234567
+TELEGRAM_API_HASH=abc123...
 ```
 
-First run prompts for your phone number and a login code. That creates
+Get both from https://my.telegram.org (log in with your own phone number →
+API development tools → create an app). The scraper reads `.env`
+automatically; real environment variables still win if you set them, so
+`TELEGRAM_API_ID=other python3 tools/...` works for a one-off override.
+
+`.env` is gitignored. It holds credentials for *your* Telegram account, not
+the bot's — don't commit or share it.
+
+If the bot turns out to send voice clips you'll also need ffmpeg
+(`brew install ffmpeg`); `setup.sh` warns if it's missing.
+
+First scraper run prompts for your phone number and a login code. That creates
 `mukhpath_scraper_session.session` — a live credential for your account.
 It's gitignored; don't commit or share it.
 
@@ -115,13 +129,16 @@ Heuristics, all of them fallible — that's what `review.md` is for:
   `Translation:` starts `meaning`; other Latin lines → `transliteration` if
   there's already scripture to transliterate, else `meaning`.
 
-## Verifying changes to the parser
+## Verifying changes to the tools
 
 ```bash
 python3 tests/test_parse_dump.py
+python3 tests/test_dotenv.py
 ```
 
-Runs against `tests/fixtures/sample_dump.json` — a hand-written dump shaped
+Neither needs telethon or a Telegram session, so they run anywhere.
+
+`test_parse_dump.py` runs against `tests/fixtures/sample_dump.json` — a hand-written dump shaped
 like real scraper output, covering chrome filtering, multi-verse splitting,
 both scripts, the audio path, and scrape errors. No Telegram needed. Extend
 the fixture with any real-world shape the parser gets wrong.

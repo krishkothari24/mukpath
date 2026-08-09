@@ -1,3 +1,11 @@
+# Real credentials. `.env.example` is the committed template.
+.env
+.env.local
+
+# Virtualenv for the Python bootstrapping tools (scripts/setup.sh).
+.venv/
+venv/
+
 # Telethon auth session — this is a live credential for your Telegram
 # account. Never commit it.
 *.session

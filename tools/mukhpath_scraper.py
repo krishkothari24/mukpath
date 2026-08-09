@@ -63,6 +63,37 @@ def is_nav_button(label: str) -> bool:
     return bool(NAV_BUTTON_RE.match(label.strip()))
 
 
+def load_dotenv(path=None):
+    """Read KEY=value pairs from .env into the environment.
+
+    Hand-rolled rather than pulling in python-dotenv: this is a one-off
+    bootstrapping tool and the format we need is three lines of parsing.
+    Real environment variables take precedence, so `TELEGRAM_API_ID=x
+    python3 tools/...` still overrides the file.
+    """
+    path = Path(path) if path else Path(__file__).resolve().parent.parent / ".env"
+    if not path.exists():
+        return
+    values = {}
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        line = line.removeprefix("export ").strip()
+        key, sep, value = line.partition("=")
+        if not sep:
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        if value:
+            # Last occurrence wins, so appending an override to the bottom
+            # of .env does what it looks like it does.
+            values[key.strip()] = value
+    for key, value in values.items():
+        os.environ.setdefault(key, value)
+
+
 def button_kind(btn) -> str:
     """'inline' if the button is attached to the message, else 'keyboard'."""
     name = type(getattr(btn, "button", btn)).__name__
@@ -310,10 +341,9 @@ async def amain(args):
     api_hash = os.environ.get("TELEGRAM_API_HASH")
     if not api_id or not api_hash:
         sys.exit(
-            "Set TELEGRAM_API_ID and TELEGRAM_API_HASH first (from "
-            "https://my.telegram.org).\n"
-            "  export TELEGRAM_API_ID=1234567\n"
-            "  export TELEGRAM_API_HASH=abc123..."
+            "TELEGRAM_API_ID / TELEGRAM_API_HASH are not set.\n"
+            "  cp .env.example .env    # then fill both in\n"
+            "Get them from https://my.telegram.org -> API development tools."
         )
     client = TelegramClient("mukhpath_scraper_session", int(api_id), api_hash)
     await client.start()
@@ -338,6 +368,8 @@ async def amain(args):
 
 
 def main():
+    # Before parse_args: --bot reads its default from the environment.
+    load_dotenv()
     args = parse_args()
     asyncio.run(amain(args))
 
