@@ -4,37 +4,46 @@ Reference `CLAUDE.md` for stack, data model, and conventions. Work
 through these roughly in order — each phase should end in something
 runnable/testable, not just code that compiles.
 
-## Phase 0 — Content acquisition
+## Phase 0 — Content acquisition ✅ done
 
-Pipeline is built and tested; see `docs/PHASE0.md` for the runbook. The
-remaining steps need a Telegram account login, so they're yours to run.
+The plan assumed the content lived in the Telegram bot's menus. It doesn't.
+"Open Mukhpath Material" is a Telegram Web App at
+<https://bkymukhpath.nahq.baps.dev/>, which loads everything from one
+`data.json`. See `docs/PHASE0.md`.
 
-- [ ] **(needs you)** Manually explore the Telegram bot to map its actual
-      menu structure (inline buttons vs reply keyboard vs free-text state).
-      `python3 tools/mukhpath_scraper.py --dry-run` prints what the scraper
-      sees, including which button kind it detects.
-- [x] Adapt `tools/mukhpath_scraper.py` (Telethon) — handles both button
-      kinds, multi-message replies, media dedupe, flood-waits, and resumes
-      from a checkpoint
-- [ ] **(needs you)** Run it, produce `mukhpath_dump.json`
-- [x] One-off parser `scripts/parse_dump.py` — dump → `texts/sections/verses`
-      seed data, drops menu chrome, flags everything uncertain in
-      `seed/review.md` for manual cleanup
-- [x] Parser test against a fixture dump (`python3 tests/test_parse_dump.py`)
-      so it can be exercised and corrected without a Telegram session
-- [x] ffmpeg pass: `scripts/convert_audio.sh` converts `.ogg` voice clips to
-      `.m4a` (not yet run — no content, and ffmpeg isn't installed locally)
-- [ ] Scope v1 content to one complete text (e.g. Basic Mukhpath booklet
-      content) rather than everything at once — `parse_dump.py --text "..."`
-- [ ] Output: `seed/texts.json`, `seed/sections.json`, `seed/verses.json`
-      ready to load into Postgres (schema + writer done, awaiting real content)
+- [x] Map the bot — done via `--dry-run`; that's how the web app was found
+- [x] `scripts/fetch_webapp.py` — fetches `data.json`, emits seed data,
+      `--audio` mirrors the mp3s, `--offline` reuses the cache
+- [x] Output: `seed/texts.json`, `seed/sections.json`, `seed/verses.json`
+      — **5 texts, 50 verses**, each with Gujarati, transliteration,
+      English and audio. Ready to load into Postgres.
+- [x] No ffmpeg pass needed — source audio is already mp3
+- [x] No per-language merge needed — every record carries all three
+- [x] `seed/review.md` flags what needs a human: placeholder sections, the
+      extra question/reference columns, 3 records whose phrase counts
+      disagree between Gujarati and transliteration
+
+Superseded but kept (`tools/mukhpath_scraper.py`, `scripts/parse_dump.py`,
+`scripts/convert_audio.sh`): the bot walker and its dump parser. Not needed
+for content; still the way in if the bot's Practice/Quiz/Progress features
+are ever worth mapping.
+
+Open question for Phase 1: `verses` as specified in CLAUDE.md has no column
+for `question`/`reference`, but this content is question/answer shaped and
+the question is the practice prompt. Either `verses` grows those columns or
+they get their own table — decide before writing migrations.
 
 ## Phase 1 — Backend skeleton
-- [ ] Fastify project, Postgres schema/migrations for the tables in CLAUDE.md
-- [ ] Seed script to load Phase 0 output into the DB
-- [ ] REST endpoints: `GET /texts`, `GET /texts/:id/verses`, basic auth
-      (parent creates account, adds kid profiles under it)
-- [ ] Deploy to Railway, confirm it's reachable from a REST client
+- [x] Fastify project, Postgres schema/migrations for the tables in CLAUDE.md
+      (`backend/`; see `backend/README.md` for the runbook)
+- [x] Seed script to load Phase 0 output into the DB (`backend/scripts/seed.js`,
+      upserts by id so re-running after hand-corrections is safe)
+- [x] REST endpoints: `GET /texts`, `GET /texts/:id/verses`, basic auth
+      (parent creates account, adds kid profiles under it) — smoke-tested
+      locally end to end
+- [ ] **(needs you)** Deploy to Railway, confirm it's reachable from a REST
+      client — held off on creating cloud resources without a go-ahead;
+      steps are in `backend/README.md`
 
 ## Phase 2 — Mobile app skeleton
 - [ ] Expo app, navigation shell (browse texts → sections → verses)

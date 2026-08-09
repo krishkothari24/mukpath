@@ -1,0 +1,32 @@
+[
+  {
+    "id": "questions-answers--all",
+    "text_id": "questions-answers",
+    "name": "Questions & Answers",
+    "order": 0
+  },
+  {
+    "id": "vachanamrut--all",
+    "text_id": "vachanamrut",
+    "name": "Vachanamrut",
+    "order": 1
+  },
+  {
+    "id": "swamini-vato--all",
+    "text_id": "swamini-vato",
+    "name": "Swamini Vato",
+    "order": 2
+  },
+  {
+    "id": "satsang-diksha--all",
+    "text_id": "satsang-diksha",
+    "name": "Satsang Diksha",
+    "order": 3
+  },
+  {
+    "id": "upasana-prasangs--all",
+    "text_id": "upasana-prasangs",
+    "name": "Upasana Prasangs",
+    "order": 4
+  }
+]

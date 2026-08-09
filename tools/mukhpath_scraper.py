@@ -40,7 +40,7 @@ import sys
 from pathlib import Path
 
 try:
-    from telethon import TelegramClient
+    from telethon import TelegramClient, events
     from telethon.errors import FloodWaitError
 except ImportError:
     sys.exit(
@@ -141,6 +141,20 @@ class Scraper:
         self.media_seen = {}     # telegram file id -> local path
         self.refused = set()     # destructive buttons we declined to press
         self.skipped_features = set()
+        self.inbox = asyncio.Queue()
+
+    def listen(self):
+        """Route every message from the bot into self.inbox.
+
+        Registered once for the whole run. Nothing else consumes updates, so
+        no message can be dropped between actions the way Conversation did.
+        """
+        @self.client.on(events.NewMessage(chats=self.args.bot, incoming=True))
+        async def _collect(event):
+            await self.inbox.put(event.message)
+
+    async def send(self, text):
+        await self.client.send_message(self.args.bot, text)
 
     # ---------- persistence ----------
 
@@ -155,7 +169,10 @@ class Scraper:
         # Retry anything that errored last time. Failures are usually
         # transient (a timeout, a menu that had moved on), and leaving them
         # marked done means re-running silently does nothing at all.
-        retry = [node["path"] for node in self.nodes.values() if node.get("error")]
+        # A node that captured nothing is a failure too, not a leaf: the bot
+        # always answers something. Retry those as well as hard errors.
+        retry = [node["path"] for node in self.nodes.values()
+                 if node.get("error") or not node.get("messages")]
         for path in retry:
             key = key_for(path)
             self.done.discard(key)
@@ -193,17 +210,23 @@ class Scraper:
 
     # ---------- telegram plumbing ----------
 
-    async def drain(self, conv):
+    async def drain(self):
         """Collect every message the bot sends in response to one action.
 
         Bots routinely reply with several messages (header, verse, audio).
         Waiting for exactly one would silently drop most of the content.
+
+        Reads from an inbox filled by a NewMessage handler rather than
+        telethon's Conversation.get_response(). get_response leaves a dead
+        future registered when it times out; the bot's next message lands on
+        that future, telethon raises InvalidStateError inside its dispatcher,
+        and the message is lost. That silently produced empty nodes.
         """
         messages = []
         timeout = self.args.first_timeout
         while True:
             try:
-                msg = await conv.get_response(timeout=timeout)
+                msg = await asyncio.wait_for(self.inbox.get(), timeout)
             except asyncio.TimeoutError:
                 break
             messages.append(msg)
@@ -276,7 +299,7 @@ class Scraper:
                         labels.append(btn.text)
         return labels
 
-    async def press(self, conv, target, label):
+    async def press(self, target, label):
         if is_destructive_button(label):
             # Belt and braces: the walk already filters these out, but this
             # function is the only thing that can actually click, so the
@@ -291,11 +314,11 @@ class Scraper:
         if kind == "inline":
             await target.click(text=label)
         else:
-            await conv.send_message(label)
+            await self.send(label)
         await asyncio.sleep(self.args.delay)
-        return await self.drain(conv)
+        return await self.drain()
 
-    async def navigate(self, conv, path):
+    async def navigate(self, path):
         """Replay `path` from /start. Returns the messages at the end of it.
 
         Button lookup searches every message seen since /start, not just the
@@ -305,8 +328,8 @@ class Scraper:
         reply — scoping the search to the latest reply alone loses it.
         Inline buttons on older messages stay clickable, so this is safe.
         """
-        await conv.send_message("/start")
-        latest = await self.drain(conv)
+        await self.send("/start")
+        latest = await self.drain()
         seen = list(latest)
 
         # Answer language is a global mode, not a branch of the tree: it
@@ -316,7 +339,7 @@ class Scraper:
         if self.args.language:
             target = self.find_button(seen, self.args.language)
             if target is not None:
-                latest = await self.press(conv, target, self.args.language)
+                latest = await self.press(target, self.args.language)
                 seen += latest
 
         for label in path:
@@ -327,7 +350,7 @@ class Scraper:
                     f"button '{label}' not offered here; on offer: "
                     f"{offered or 'none'}"
                 )
-            latest = await self.press(conv, target, label)
+            latest = await self.press(target, label)
             seen += latest
         # Only the final reply is content; everything before it is the
         # navigation we walked through to get here.
@@ -335,7 +358,7 @@ class Scraper:
 
     # ---------- the walk ----------
 
-    async def run(self, conv):
+    async def run(self):
         if not self.load_state():
             self.queue = [[self.args.branch] if self.args.branch else []]
         while self.queue:
@@ -348,7 +371,7 @@ class Scraper:
                 continue
             label = " > ".join(path) or "(root)"
             try:
-                messages = await self.navigate(conv, path)
+                messages = await self.navigate(path)
             except FloodWaitError as exc:
                 print(f"flood wait {exc.seconds}s — sleeping")
                 await asyncio.sleep(exc.seconds + 1)
@@ -454,36 +477,36 @@ async def amain(args):
     client = TelegramClient("mukhpath_scraper_session", int(api_id), api_hash)
     await client.start()
     scraper = Scraper(client, args)
-    async with client.conversation(args.bot, timeout=args.first_timeout,
-                                   exclusive=True) as conv:
-        if args.dry_run:
-            await conv.send_message("/start")
-            labels = []
-            for msg in await scraper.drain(conv):
-                kinds = {button_kind(b) for row in (msg.buttons or []) for b in row}
-                row_labels = [b.text for row in (msg.buttons or []) for b in row]
-                labels += row_labels
-                print("-" * 60)
-                print(msg.text)
-                print("buttons:", row_labels)
-                print("kind:", kinds or "none", "| media:", bool(msg.media))
-            refused = [b for b in labels if is_destructive_button(b)]
-            features = [b for b in labels if not is_destructive_button(b)
-                        and is_feature_button(b)]
+    # One handler for the whole run, instead of client.conversation(). See
+    # Scraper.drain for why the Conversation API loses messages here.
+    scraper.listen()
+
+    if args.dry_run:
+        await scraper.send("/start")
+        labels = []
+        for msg in await scraper.drain():
+            kinds = {button_kind(b) for row in (msg.buttons or []) for b in row}
+            row_labels = [b.text for row in (msg.buttons or []) for b in row]
+            labels += row_labels
             print("-" * 60)
-            if refused:
-                print(f"will never be pressed: {', '.join(refused)}")
-            if features:
-                print(f"will be skipped as non-content: {', '.join(features)}")
-            print("mixed button kinds are fine — leave --mode on auto.")
-            print("Pick the content branch with --branch, and set --language "
-                  "once per run.")
-            return
-        await scraper.run(conv)
-        # Swallow any straggler the bot sends as we finish. Left pending, it
-        # arrives after the conversation has torn down and telethon logs a
-        # noisy (harmless) InvalidStateError traceback.
-        await scraper.drain(conv)
+            print(msg.text)
+            print("buttons:", row_labels)
+            print("kind:", kinds or "none", "| media:", bool(msg.media))
+        refused = [b for b in labels if is_destructive_button(b)]
+        features = [b for b in labels if not is_destructive_button(b)
+                    and is_feature_button(b)]
+        print("-" * 60)
+        if refused:
+            print(f"will never be pressed: {', '.join(refused)}")
+        if features:
+            print(f"will be skipped as non-content: {', '.join(features)}")
+        print("mixed button kinds are fine — leave --mode on auto.")
+        print("Pick the content branch with --branch, and set --language "
+              "once per run.")
+        await client.disconnect()
+        return
+
+    await scraper.run()
     scraper.save()
     print(f"\nCaptured {len(scraper.nodes)} nodes -> {args.output}")
     if scraper.refused:

@@ -1,5 +1,45 @@
 # Phase 0 runbook — content acquisition
 
+> **The content does not come from the Telegram bot.** Its "Open Mukhpath
+> Material" button is a Telegram Web App pointing at
+> <https://bkymukhpath.nahq.baps.dev/>, and that page loads everything from
+> a single `data.json`. The bot's message tree contains no verses at all,
+> so walking its menus can never produce them.
+>
+> **The whole of Phase 0 is now one command:**
+>
+> ```bash
+> python3 scripts/fetch_webapp.py
+> ```
+>
+> That writes `seed/texts.json`, `seed/sections.json`, `seed/verses.json`
+> and `seed/review.md` — 5 texts, 50 verses, every one with Gujarati,
+> transliteration, English and an mp3. Add `--audio` to mirror the audio
+> locally. Each record already carries all three languages, so there is no
+> per-language scraping and nothing to merge.
+>
+> Everything below documents the Telegram scraper. It is **superseded for
+> content**, kept because it's how the web app was found and because the
+> bot's Practice/Quiz/Progress features may be worth mapping later. Skip to
+> [the scraper section](#the-bots-actual-shape) only if you need that.
+
+## Quick reference
+
+| step | command |
+| --- | --- |
+| Get the content | `python3 scripts/fetch_webapp.py` |
+| ...with audio | `python3 scripts/fetch_webapp.py --audio` |
+| ...one text only | `python3 scripts/fetch_webapp.py --text "Satsang Diksha"` |
+| ...without refetching | `python3 scripts/fetch_webapp.py --offline` |
+| Run the tests | `./scripts/test.sh` |
+
+The raw `data.json` is cached to `mukhpath_webapp.json` (gitignored); the
+`seed/` output is committed on purpose.
+
+---
+
+# Appendix — the Telegram scraper
+
 Goal: `seed/texts.json`, `seed/sections.json`, `seed/verses.json` ready for
 Phase 1 to load into Postgres, scoped to one complete text.
 

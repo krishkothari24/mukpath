@@ -4,7 +4,7 @@ Generated content, committed on purpose — Phase 1's seed script loads these
 into Postgres, and they're the reviewed/corrected source of truth for v1
 content.
 
-`scripts/parse_dump.py` writes four files here:
+`scripts/fetch_webapp.py` writes four files here:
 
 | file | shape |
 | --- | --- |

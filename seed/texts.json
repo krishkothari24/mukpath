@@ -1,0 +1,27 @@
+[
+  {
+    "id": "questions-answers",
+    "name": "Questions & Answers",
+    "description": ""
+  },
+  {
+    "id": "vachanamrut",
+    "name": "Vachanamrut",
+    "description": ""
+  },
+  {
+    "id": "swamini-vato",
+    "name": "Swamini Vato",
+    "description": ""
+  },
+  {
+    "id": "satsang-diksha",
+    "name": "Satsang Diksha",
+    "description": ""
+  },
+  {
+    "id": "upasana-prasangs",
+    "name": "Upasana Prasangs",
+    "description": ""
+  }
+]
