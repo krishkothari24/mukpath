@@ -77,8 +77,6 @@ export const api = {
       body: { email, password },
     }),
 
-  // The response also carries a `kids` array; the app ignores it. See the
-  // note in lib/auth.tsx — one account, one learner.
   me: (token: string) => request<User>('/me', { token }),
 
   // Content is public — no token needed. There is no /sections endpoint;

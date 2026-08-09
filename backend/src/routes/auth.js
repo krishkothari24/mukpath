@@ -4,9 +4,8 @@ import { pool } from "../db.js";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default async function authRoutes(fastify) {
-  // Parent account creation. Kid/teacher profiles are added under a
-  // parent's session via POST /kids, not registered directly — v1 has
-  // no separate login for them.
+  // One account, one learner — no parent/kid hierarchy. Whoever registers
+  // is who practises and who logs in.
   fastify.post("/auth/register", async (request, reply) => {
     const { name, email, password } = request.body ?? {};
     if (!name || !email || !password) {
@@ -26,13 +25,13 @@ export default async function authRoutes(fastify) {
 
     const passwordHash = await bcrypt.hash(password, 10);
     const { rows } = await pool.query(
-      `INSERT INTO users (name, role, email, password_hash)
-       VALUES ($1, 'parent', $2, $3)
-       RETURNING id, name, role`,
+      `INSERT INTO users (name, email, password_hash)
+       VALUES ($1, $2, $3)
+       RETURNING id, name, email`,
       [name, email, passwordHash],
     );
     const user = rows[0];
-    const token = fastify.jwt.sign({ sub: user.id, role: user.role });
+    const token = fastify.jwt.sign({ sub: user.id });
     return reply.code(201).send({ token, user });
   });
 
@@ -43,7 +42,7 @@ export default async function authRoutes(fastify) {
     }
 
     const { rows } = await pool.query(
-      "SELECT id, name, role, password_hash FROM users WHERE email = $1 AND role = 'parent'",
+      "SELECT id, name, password_hash FROM users WHERE email = $1",
       [email],
     );
     const user = rows[0];
@@ -52,39 +51,17 @@ export default async function authRoutes(fastify) {
       return reply.code(401).send({ error: "invalid email or password" });
     }
 
-    const token = fastify.jwt.sign({ sub: user.id, role: user.role });
-    return { token, user: { id: user.id, name: user.name, role: user.role } };
+    const token = fastify.jwt.sign({ sub: user.id });
+    return { token, user: { id: user.id, name: user.name, email: user.email } };
   });
 
-  // Who am I / which kid profiles do I have. Handy for a REST client
-  // smoke test and for the mobile app's profile switcher later.
+  // Who am I. Handy for a REST client smoke test and for the mobile app's
+  // session restore on launch.
   fastify.get("/me", { onRequest: [fastify.authenticate] }, async (request) => {
-    const parentId = request.user.sub;
-    const [parent, kids] = await Promise.all([
-      pool.query("SELECT id, name, role, email FROM users WHERE id = $1", [parentId]),
-      pool.query(
-        "SELECT id, name, role FROM users WHERE parent_id = $1 ORDER BY name",
-        [parentId],
-      ),
-    ]);
-    return { ...parent.rows[0], kids: kids.rows };
-  });
-
-  // Add a kid (or teacher) profile under the logged-in parent.
-  fastify.post("/kids", { onRequest: [fastify.authenticate] }, async (request, reply) => {
-    const { name, role = "kid" } = request.body ?? {};
-    if (!name) {
-      return reply.code(400).send({ error: "name is required" });
-    }
-    if (!["kid", "teacher"].includes(role)) {
-      return reply.code(400).send({ error: "role must be kid or teacher" });
-    }
-
     const { rows } = await pool.query(
-      `INSERT INTO users (name, role, parent_id) VALUES ($1, $2, $3)
-       RETURNING id, name, role`,
-      [name, role, request.user.sub],
+      "SELECT id, name, email FROM users WHERE id = $1",
+      [request.user.sub],
     );
-    return reply.code(201).send(rows[0]);
+    return rows[0];
   });
 }

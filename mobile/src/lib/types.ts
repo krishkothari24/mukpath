@@ -94,7 +94,6 @@ export type Goal = {
 export type User = {
   id: string;
   name: string;
-  role: 'parent' | 'kid' | 'teacher';
   email?: string;
 };
 

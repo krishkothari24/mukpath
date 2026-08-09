@@ -33,15 +33,11 @@ CREATE INDEX verses_section_id_idx ON verses(section_id);
 CREATE TABLE users (
   id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name          TEXT NOT NULL,
-  role          TEXT NOT NULL CHECK (role IN ('parent', 'kid', 'teacher')),
-  parent_id     UUID REFERENCES users(id) ON DELETE CASCADE,
-  -- Only parents log in directly; kid/teacher profiles are accessed
-  -- through the parent's session in v1, so these are nullable.
-  email         TEXT UNIQUE,
-  password_hash TEXT,
-  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-  CHECK (role != 'parent' OR (email IS NOT NULL AND password_hash IS NOT NULL)),
-  CHECK (role = 'parent' OR parent_id IS NOT NULL)
+  -- One account, one learner: whoever signs in is who practises. No
+  -- parent/kid hierarchy — see CLAUDE.md.
+  email         TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE progress (

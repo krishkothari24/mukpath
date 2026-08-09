@@ -36,10 +36,9 @@ cleans up the accounts it creates. `test/scheduler.test.js` is the exception
 | `GET /health` | liveness check |
 | `GET /texts` | list all texts |
 | `GET /texts/:id/verses` | a text's verses, joined with section info, in order |
-| `POST /auth/register` | `{name, email, password}` → creates a parent account, returns a JWT |
+| `POST /auth/register` | `{name, email, password}` → creates an account, returns a JWT |
 | `POST /auth/login` | `{email, password}` → JWT |
-| `GET /me` | parent profile + their kid/teacher profiles (auth required) |
-| `POST /kids` | `{name, role?}` → adds a kid/teacher profile under the logged-in parent (auth required) |
+| `GET /me` | the signed-in user's profile (auth required) |
 | `GET /progress` | every progress row for the learner (auth required) |
 | `POST /progress` | `{reviews: [{verse_id, grade, reviewed_on?}], today?}` → records self-assessments, returns the recomputed rows (auth required) |
 | `GET /practice/today?date=` | today's queue: everything due, then new verses up to the day's budget (auth required) |
@@ -60,15 +59,15 @@ server recomputes from its own stored row, so two devices can't disagree
 about where a verse sits. The whole batch is one transaction: an unknown
 verse rejects the lot.
 
-Auth required means `Authorization: Bearer <token>`. Only parents log in
-directly in v1 — kid/teacher profiles are managed through the parent's
-session, not their own login.
+Auth required means `Authorization: Bearer <token>`. One account, one
+learner — whoever is signed in is who practises, no parent/kid hierarchy.
 
 ## Schema
 
 `src/migrations/001_init.sql` — the `texts/sections/verses/users/progress/goals`
 tables from `CLAUDE.md`. `texts`/`sections`/`verses` use the slug ids Phase 0
 generates (diffable, re-runnable); `users`/`goals` use generated UUIDs.
+`users` is one row per learner — no parent/kid role or hierarchy.
 
 `002_verse_prompts.sql` adds columns `CLAUDE.md` didn't anticipate, because
 the real content turned out to be question/answer shaped: `question*`,

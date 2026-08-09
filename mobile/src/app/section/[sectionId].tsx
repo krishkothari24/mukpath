@@ -4,7 +4,7 @@ import { FlatList, StyleSheet, View } from 'react-native';
 
 import { LanguageToggle } from '@/components/language-toggle';
 import { ThemedText } from '@/components/themed-text';
-import { Centered, Column, ListRow, Loading } from '@/components/ui';
+import { Banner, Button, Centered, Column, ListRow, Loading } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { useContent } from '@/lib/content';
 import { getSection, listVerses } from '@/lib/db';
@@ -23,28 +23,48 @@ export default function VersesScreen() {
   const [section, setSection] = useState<Section | null>(null);
   const [verses, setVerses] = useState<Verse[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!ready || !sectionId) return;
     let cancelled = false;
 
     (async () => {
-      const [sectionRow, verseRows] = await Promise.all([
-        getSection(sectionId),
-        listVerses(sectionId),
-      ]);
-      if (cancelled) return;
-      setSection(sectionRow);
-      setVerses(verseRows);
-      setLoading(false);
+      setLoading(true);
+      setError(null);
+      try {
+        const [sectionRow, verseRows] = await Promise.all([
+          getSection(sectionId),
+          listVerses(sectionId),
+        ]);
+        if (cancelled) return;
+        setSection(sectionRow);
+        setVerses(verseRows);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not open this section');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [ready, revision, sectionId]);
+  }, [ready, revision, sectionId, attempt]);
 
   if (loading) return <Loading />;
+
+  if (error) {
+    return (
+      <Centered>
+        <Banner tone="error">{error}</Banner>
+        <View style={styles.retry}>
+          <Button label="Try again" onPress={() => setAttempt((count) => count + 1)} />
+        </View>
+      </Centered>
+    );
+  }
 
   if (!section) {
     return (
@@ -102,4 +122,5 @@ const styles = StyleSheet.create({
   list: { paddingBottom: Spacing.five },
   header: { paddingVertical: Spacing.three },
   empty: { padding: Spacing.four, alignItems: 'center' },
+  retry: { marginTop: Spacing.three },
 });

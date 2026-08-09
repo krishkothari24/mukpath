@@ -1,9 +1,9 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { FlatList, StyleSheet } from 'react-native';
+import { FlatList, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Centered, Column, ListRow, Loading } from '@/components/ui';
+import { Banner, Button, Centered, Column, ListRow, Loading } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { useContent } from '@/lib/content';
 import { getText, listSections, verseCountsBySection } from '@/lib/db';
@@ -27,30 +27,50 @@ export default function SectionsScreen() {
   const [sections, setSections] = useState<Section[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!ready || !textId) return;
     let cancelled = false;
 
     (async () => {
-      const [textRow, sectionRows, verseCounts] = await Promise.all([
-        getText(textId),
-        listSections(textId),
-        verseCountsBySection(textId),
-      ]);
-      if (cancelled) return;
-      setText(textRow);
-      setSections(sectionRows);
-      setCounts(verseCounts);
-      setLoading(false);
+      setLoading(true);
+      setError(null);
+      try {
+        const [textRow, sectionRows, verseCounts] = await Promise.all([
+          getText(textId),
+          listSections(textId),
+          verseCountsBySection(textId),
+        ]);
+        if (cancelled) return;
+        setText(textRow);
+        setSections(sectionRows);
+        setCounts(verseCounts);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not open this text');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [ready, revision, textId]);
+  }, [ready, revision, textId, attempt]);
 
   if (loading) return <Loading />;
+
+  if (error) {
+    return (
+      <Centered>
+        <Banner tone="error">{error}</Banner>
+        <View style={styles.retry}>
+          <Button label="Try again" onPress={() => setAttempt((count) => count + 1)} />
+        </View>
+      </Centered>
+    );
+  }
 
   if (!text) {
     return (
@@ -100,4 +120,5 @@ export default function SectionsScreen() {
 const styles = StyleSheet.create({
   list: { paddingBottom: Spacing.five },
   intro: { paddingVertical: Spacing.three },
+  retry: { marginTop: Spacing.three },
 });

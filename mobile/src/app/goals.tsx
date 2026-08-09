@@ -28,13 +28,23 @@ export default function GoalsScreen() {
   const [targetDate, setTargetDate] = useState(() => addDays(new Date(), 30));
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [textsError, setTextsError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!contentReady) return;
     let cancelled = false;
-    listTexts().then((rows) => {
-      if (!cancelled) setTexts(rows);
-    });
+    listTexts()
+      .then((rows) => {
+        if (!cancelled) {
+          setTexts(rows);
+          setTextsError(null);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setTextsError(err instanceof Error ? err.message : 'Could not load texts');
+        }
+      });
     return () => {
       cancelled = true;
     };
@@ -92,32 +102,43 @@ export default function GoalsScreen() {
 
           <Card>
             <ThemedText type="smallBold">Set a goal</ThemedText>
-            <View style={styles.picker}>
-              {texts.map((text) => (
-                <TextChip
-                  key={text.id}
-                  label={text.name}
-                  selected={selected === text.id}
-                  // A text with a goal can be re-picked — that moves the date.
-                  hint={goalTargets.has(text.id) ? 'has a goal' : null}
-                  onPress={() => setSelected(text.id)}
+
+            {textsError ? (
+              <Banner tone="error">{textsError}</Banner>
+            ) : texts.length === 0 ? (
+              <ThemedText type="small" themeColor="textSecondary">
+                No texts on this device yet — sync from the library screen first.
+              </ThemedText>
+            ) : (
+              <>
+                <View style={styles.picker}>
+                  {texts.map((text) => (
+                    <TextChip
+                      key={text.id}
+                      label={text.name}
+                      selected={selected === text.id}
+                      // A text with a goal can be re-picked — that moves the date.
+                      hint={goalTargets.has(text.id) ? 'has a goal' : null}
+                      onPress={() => setSelected(text.id)}
+                    />
+                  ))}
+                </View>
+
+                <Field
+                  label="Finish by (YYYY-MM-DD)"
+                  value={targetDate}
+                  onChangeText={setTargetDate}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  placeholder="2026-12-31"
+                  keyboardType="numbers-and-punctuation"
                 />
-              ))}
-            </View>
 
-            <Field
-              label="Finish by (YYYY-MM-DD)"
-              value={targetDate}
-              onChangeText={setTargetDate}
-              autoCapitalize="none"
-              autoCorrect={false}
-              placeholder="2026-12-31"
-              keyboardType="numbers-and-punctuation"
-            />
+                {formError ? <Banner tone="error">{formError}</Banner> : null}
 
-            {formError ? <Banner tone="error">{formError}</Banner> : null}
-
-            <Button label="Save goal" onPress={onSave} busy={saving} />
+                <Button label="Save goal" onPress={onSave} busy={saving} />
+              </>
+            )}
           </Card>
         </Column>
       </ScrollView>

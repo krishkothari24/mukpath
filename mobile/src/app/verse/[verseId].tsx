@@ -6,7 +6,7 @@ import { AudioBar } from '@/components/audio-bar';
 import { LanguageToggle } from '@/components/language-toggle';
 import { RecordingBar } from '@/components/recording-bar';
 import { ThemedText } from '@/components/themed-text';
-import { Button, Card, Centered, Column, Loading } from '@/components/ui';
+import { Banner, Button, Card, Centered, Column, Loading } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { verseAudioUri } from '@/lib/audio-cache';
@@ -29,6 +29,8 @@ export default function VerseScreen() {
   const [verse, setVerse] = useState<Verse | null>(null);
   const [siblings, setSiblings] = useState<Verse[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!ready || !verseId) return;
@@ -36,17 +38,23 @@ export default function VerseScreen() {
 
     (async () => {
       setLoading(true);
-      const row = await getVerse(verseId);
-      if (cancelled) return;
-      setVerse(row);
-      setSiblings(row ? await listVerses(row.section_id) : []);
-      if (!cancelled) setLoading(false);
+      setError(null);
+      try {
+        const row = await getVerse(verseId);
+        if (cancelled) return;
+        setVerse(row);
+        setSiblings(row ? await listVerses(row.section_id) : []);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not open this verse');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [ready, revision, verseId]);
+  }, [ready, revision, verseId, attempt]);
 
   const { index, previous, next } = useMemo(() => {
     const position = siblings.findIndex((item) => item.id === verseId);
@@ -58,6 +66,17 @@ export default function VerseScreen() {
   }, [siblings, verseId]);
 
   if (loading) return <Loading />;
+
+  if (error) {
+    return (
+      <Centered>
+        <Banner tone="error">{error}</Banner>
+        <View style={styles.retry}>
+          <Button label="Try again" onPress={() => setAttempt((count) => count + 1)} />
+        </View>
+      </Centered>
+    );
+  }
 
   if (!verse) {
     return (
@@ -186,4 +205,5 @@ const styles = StyleSheet.create({
   meaning: { fontSize: 15, lineHeight: 24 },
   pager: { flexDirection: 'row', gap: Spacing.three, marginTop: Spacing.two },
   pagerSlot: { flex: 1 },
+  retry: { marginTop: Spacing.three },
 });

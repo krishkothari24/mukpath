@@ -43,12 +43,12 @@ function email() {
   return address;
 }
 
-async function registerParent() {
+async function registerUser() {
   const address = email();
   const res = await app.inject({
     method: "POST",
     url: "/auth/register",
-    payload: { name: "Test Parent", email: address, password: "testpass123" },
+    payload: { name: "Test User", email: address, password: "testpass123" },
   });
   assert.equal(res.statusCode, 201);
   return { address, ...res.json() };
@@ -114,19 +114,18 @@ describe("content", () => {
 });
 
 describe("auth", () => {
-  it("registers a parent and issues an expiring token", { skip: skip() }, async () => {
-    const { token } = await registerParent();
+  it("registers a user and issues an expiring token", { skip: skip() }, async () => {
+    const { token } = await registerUser();
     const claims = JSON.parse(
       Buffer.from(token.split(".")[1], "base64url").toString("utf8"),
     );
-    assert.equal(claims.role, "parent");
     // An unbounded token means one leak is permanent access.
     assert.ok(claims.exp, "token has no exp claim");
     assert.ok(claims.exp > claims.iat);
   });
 
   it("rejects a duplicate email", { skip: skip() }, async () => {
-    const { address } = await registerParent();
+    const { address } = await registerUser();
     const res = await app.inject({
       method: "POST",
       url: "/auth/register",
@@ -145,7 +144,7 @@ describe("auth", () => {
   });
 
   it("logs in and rejects a wrong password", { skip: skip() }, async () => {
-    const { address } = await registerParent();
+    const { address } = await registerUser();
     const ok = await app.inject({
       method: "POST",
       url: "/auth/login",
@@ -167,51 +166,11 @@ describe("auth", () => {
 
   it("rejects a forged unsigned token", { skip: skip() }, async () => {
     const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url");
-    const body = Buffer.from(JSON.stringify({ sub: "x", role: "parent" })).toString("base64url");
+    const body = Buffer.from(JSON.stringify({ sub: "x" })).toString("base64url");
     const res = await app.inject({
       url: "/me",
       headers: { authorization: `Bearer ${header}.${body}.` },
     });
     assert.equal(res.statusCode, 401);
-  });
-
-  it("adds a kid and lists it under the parent", { skip: skip() }, async () => {
-    const { token } = await registerParent();
-    const auth = { authorization: `Bearer ${token}` };
-    const kid = await app.inject({
-      method: "POST", url: "/kids", headers: auth, payload: { name: "Test Kid" },
-    });
-    assert.equal(kid.statusCode, 201);
-    assert.equal(kid.json().role, "kid");
-
-    const me = await app.inject({ url: "/me", headers: auth });
-    assert.equal(me.statusCode, 200);
-    assert.equal(me.json().kids.length, 1);
-    assert.equal(me.json().kids[0].name, "Test Kid");
-  });
-
-  it("refuses a bogus role on /kids", { skip: skip() }, async () => {
-    const { token } = await registerParent();
-    const res = await app.inject({
-      method: "POST",
-      url: "/kids",
-      headers: { authorization: `Bearer ${token}` },
-      payload: { name: "Sneaky", role: "parent" },
-    });
-    assert.equal(res.statusCode, 400);
-  });
-
-  it("does not leak another parent's kids", { skip: skip() }, async () => {
-    const a = await registerParent();
-    const b = await registerParent();
-    await app.inject({
-      method: "POST", url: "/kids",
-      headers: { authorization: `Bearer ${a.token}` },
-      payload: { name: "A's Kid" },
-    });
-    const me = await app.inject({
-      url: "/me", headers: { authorization: `Bearer ${b.token}` },
-    });
-    assert.deepEqual(me.json().kids, []);
   });
 });

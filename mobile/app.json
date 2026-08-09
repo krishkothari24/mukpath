@@ -37,7 +37,8 @@
       "expo-secure-store",
       "expo-audio",
       "expo-notifications",
-      "expo-file-system"
+      "expo-file-system",
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true,

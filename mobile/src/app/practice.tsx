@@ -38,17 +38,24 @@ export default function PracticeScreen() {
   const [position, setPosition] = useState(0);
   const [revealed, setRevealed] = useState(0);
   const [graded, setGraded] = useState(0);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!ready) return;
     let cancelled = false;
 
     (async () => {
-      const session = await loadSession(today, goals);
-      if (cancelled) return;
-      // Due reviews before new material: a verse the learner is about to
-      // forget is worth more than one they've never seen.
-      setQueue([...session.due, ...session.fresh]);
+      setLoadError(null);
+      try {
+        const session = await loadSession(today, goals);
+        if (cancelled) return;
+        // Due reviews before new material: a verse the learner is about to
+        // forget is worth more than one they've never seen.
+        setQueue([...session.due, ...session.fresh]);
+      } catch (err) {
+        if (!cancelled) setLoadError(err instanceof Error ? err.message : "Couldn't build today's session");
+      }
     })();
 
     return () => {
@@ -57,7 +64,7 @@ export default function PracticeScreen() {
     // Deliberately not re-running on `revision` — grading must not rebuild
     // the queue mid-session.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready]);
+  }, [ready, attempt]);
 
   const verse = queue?.[position] ?? null;
   const chunks = useMemo(
@@ -80,6 +87,17 @@ export default function PracticeScreen() {
     },
     [grade, verse],
   );
+
+  if (loadError) {
+    return (
+      <Centered>
+        <Banner tone="error">{loadError}</Banner>
+        <View style={styles.retryGap}>
+          <Button label="Try again" onPress={() => setAttempt((count) => count + 1)} />
+        </View>
+      </Centered>
+    );
+  }
 
   if (!ready || !queue) return <Loading label="Building today's session…" />;
 
@@ -242,4 +260,5 @@ const styles = StyleSheet.create({
   gradeSlot: { flex: 1 },
   doneTitle: { fontWeight: '600' },
   doneBody: { textAlign: 'center', marginVertical: Spacing.two },
+  retryGap: { marginTop: Spacing.three },
 });

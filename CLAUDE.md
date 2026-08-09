@@ -36,7 +36,8 @@ verses      (id, section_id, sanskrit, transliteration, meaning,
              reference, reference_gujarati, audio_url_english,
              has_shlok, sanskrit_chunks, transliteration_chunks,
              meaning_chunks)
-users       (id, name, role: parent | kid | teacher, parent_id nullable)
+users       (id, name, email, password_hash)
+            -- one account, one learner; no parent/kid hierarchy
 progress    (user_id, verse_id, status: new|learning|review|mastered,
              next_review_date, ease_factor, interval_days,
              -- added by the Phase 3 scheduler (migrations 003, 004)

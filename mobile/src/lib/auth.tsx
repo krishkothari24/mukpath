@@ -9,12 +9,9 @@ const TOKEN_KEY = 'mukhpath.token';
 const ME_CACHE_KEY = 'auth.me';
 
 /**
- * One account, one learner.
- *
- * The backend can model kid profiles under a parent (`parent_id`, `POST
- * /kids`), but the app does not use them: whoever is signed in is who is
- * practising. Phase 3 keys progress off the JWT's user id, so there is no
- * separate profile to pass along.
+ * One account, one learner — no parent/kid hierarchy. Whoever is signed in
+ * is who is practising. Phase 3 keys progress off the JWT's user id, so
+ * there is no separate profile to pass along.
  */
 type AuthState = {
   status: 'loading' | 'signedOut' | 'signedIn';

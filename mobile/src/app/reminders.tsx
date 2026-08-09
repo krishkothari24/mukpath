@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { Banner, Button, Card, Column, Loading } from '@/components/ui';
+import { Banner, Button, Card, Centered, Column, Loading } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { disableReminder, enableReminder, getReminderSettings, type ReminderSettings } from '@/lib/reminders';
@@ -26,16 +26,38 @@ export default function RemindersScreen() {
   const [settings, setSettings] = useState<ReminderSettings | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    getReminderSettings().then((loaded) => {
-      if (!cancelled) setSettings(loaded);
-    });
+    getReminderSettings()
+      .then((loaded) => {
+        if (!cancelled) {
+          setSettings(loaded);
+          setLoadError(null);
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : 'Could not load reminder settings');
+        }
+      });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [attempt]);
+
+  if (loadError) {
+    return (
+      <Centered>
+        <Banner tone="error">{loadError}</Banner>
+        <View style={styles.retry}>
+          <Button label="Try again" onPress={() => setAttempt((count) => count + 1)} />
+        </View>
+      </Centered>
+    );
+  }
 
   if (!settings) return <Loading />;
 
@@ -122,6 +144,7 @@ export default function RemindersScreen() {
 const styles = StyleSheet.create({
   scroll: { paddingVertical: Spacing.three, paddingBottom: Spacing.six },
   body: { gap: Spacing.three },
+  retry: { marginTop: Spacing.three },
   presets: { gap: Spacing.two },
   chip: {
     borderWidth: StyleSheet.hairlineWidth,

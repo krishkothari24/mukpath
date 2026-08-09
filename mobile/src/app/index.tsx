@@ -19,6 +19,8 @@ export default function TextsScreen() {
   const [texts, setTexts] = useState<TextRow[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+  const [readError, setReadError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   // Reads always come from SQLite; `revision` re-runs them after a sync lands.
   useEffect(() => {
@@ -26,17 +28,24 @@ export default function TextsScreen() {
     let cancelled = false;
 
     (async () => {
-      const [rows, verseCounts] = await Promise.all([listTexts(), verseCountsByText()]);
-      if (cancelled) return;
-      setTexts(rows);
-      setCounts(verseCounts);
-      setLoading(false);
+      setLoading(true);
+      setReadError(null);
+      try {
+        const [rows, verseCounts] = await Promise.all([listTexts(), verseCountsByText()]);
+        if (cancelled) return;
+        setTexts(rows);
+        setCounts(verseCounts);
+      } catch (err) {
+        if (!cancelled) setReadError(err instanceof Error ? err.message : 'Could not read the library');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [ready, revision]);
+  }, [ready, revision, attempt]);
 
   // The practice card is the whole point of the app, so it sits above the
   // library rather than behind a tab: the default action on opening should be
@@ -53,6 +62,20 @@ export default function TextsScreen() {
 
   if (!ready || loading) {
     return <Loading label="Opening your library…" />;
+  }
+
+  if (readError) {
+    return (
+      <Centered>
+        <ThemedText type="default" style={styles.emptyTitle}>
+          Couldn&apos;t open your library
+        </ThemedText>
+        <ThemedText type="small" themeColor="textSecondary" style={styles.emptyBody}>
+          {readError}
+        </ThemedText>
+        <Button label="Try again" onPress={() => setAttempt((count) => count + 1)} />
+      </Centered>
+    );
   }
 
   if (!hasContent) {
