@@ -59,8 +59,35 @@ NAV_BUTTON_RE = re.compile(
 )
 
 
+# NEVER clicked. This bot is someone else's and it holds real user state:
+# Reset wipes your progress, and Quiz/Polls would submit answers and votes.
+# A content scraper has no business touching any of them. There is
+# deliberately no flag to turn this off.
+DESTRUCTIVE_BUTTON_RE = re.compile(
+    r"^\W*(reset|delete|clear|remove|erase|unsubscribe|stop|leave|"
+    r"quiz|poll|polls|vote|submit|answer)\b",
+    re.IGNORECASE,
+)
+
+# Bot features rather than scripture. Skipped by default because walking
+# them produces no content; --include-features if you want them mapped.
+FEATURE_BUTTON_RE = re.compile(
+    r"^\W*(practice|progress|language|help|settings|about|feedback|"
+    r"contact|donate|share|stats|leaderboard|streak|reminder)\b",
+    re.IGNORECASE,
+)
+
+
 def is_nav_button(label: str) -> bool:
     return bool(NAV_BUTTON_RE.match(label.strip()))
+
+
+def is_destructive_button(label: str) -> bool:
+    return bool(DESTRUCTIVE_BUTTON_RE.match(label.strip()))
+
+
+def is_feature_button(label: str) -> bool:
+    return bool(FEATURE_BUTTON_RE.match(label.strip()))
 
 
 def load_dotenv(path=None):
@@ -112,6 +139,8 @@ class Scraper:
         self.done = set()        # path-keys already captured
         self.queue = []          # list[list[str]] paths still to visit
         self.media_seen = {}     # telegram file id -> local path
+        self.refused = set()     # destructive buttons we declined to press
+        self.skipped_features = set()
 
     # ---------- persistence ----------
 
@@ -218,37 +247,59 @@ class Scraper:
             "duration": getattr(getattr(msg, "file", None), "duration", None),
         }
 
+    def find_button(self, messages, label):
+        """The most recent message offering `label`, or None."""
+        return next(
+            (m for m in reversed(messages) if m.buttons
+             and any(b.text == label for row in m.buttons for b in row)),
+            None,
+        )
+
+    async def press(self, conv, target, label):
+        if is_destructive_button(label):
+            # Belt and braces: the walk already filters these out, but this
+            # function is the only thing that can actually click, so the
+            # check that matters lives here.
+            raise PermissionError(f"refusing to press '{label}'")
+        kind = self.args.mode
+        if kind == "auto":
+            kind = next(
+                button_kind(b)
+                for row in target.buttons for b in row if b.text == label
+            )
+        if kind == "inline":
+            await target.click(text=label)
+        else:
+            await conv.send_message(label)
+        await asyncio.sleep(self.args.delay)
+        return await self.drain(conv)
+
     async def navigate(self, conv, path):
         """Replay `path` from /start. Returns the messages at the end of it."""
         await conv.send_message("/start")
         messages = await self.drain(conv)
+
+        # Answer language is a global mode, not a branch of the tree: it
+        # changes what every later answer looks like, so it has to be set
+        # once per run before walking. The bot only offers it when it isn't
+        # already set, so not finding it is normal.
+        if self.args.language:
+            target = self.find_button(messages, self.args.language)
+            if target is not None:
+                messages = await self.press(conv, target, self.args.language)
+
         for label in path:
-            target = next(
-                (m for m in reversed(messages) if m.buttons
-                 and any(b.text == label for row in m.buttons for b in row)),
-                None,
-            )
+            target = self.find_button(messages, label)
             if target is None:
                 raise LookupError(f"button '{label}' not offered here")
-            kind = self.args.mode
-            if kind == "auto":
-                kind = next(
-                    button_kind(b)
-                    for row in target.buttons for b in row if b.text == label
-                )
-            if kind == "inline":
-                await target.click(text=label)
-            else:
-                await conv.send_message(label)
-            await asyncio.sleep(self.args.delay)
-            messages = await self.drain(conv)
+            messages = await self.press(conv, target, label)
         return messages
 
     # ---------- the walk ----------
 
     async def run(self, conv):
         if not self.load_state():
-            self.queue = [[]]
+            self.queue = [[self.args.branch] if self.args.branch else []]
         while self.queue:
             if len(self.done) >= self.args.max_nodes:
                 print(f"hit --max-nodes ({self.args.max_nodes}), stopping")
@@ -284,7 +335,13 @@ class Scraper:
                         if btn in seen_here:
                             continue
                         seen_here.add(btn)
+                        if is_destructive_button(btn):
+                            self.refused.add(btn)
+                            continue
                         if not self.args.follow_nav and is_nav_button(btn):
+                            continue
+                        if not self.args.include_features and is_feature_button(btn):
+                            self.skipped_features.add(btn)
                             continue
                         child = path + [btn]
                         if key_for(child) in self.done:
@@ -327,8 +384,19 @@ def parse_args(argv=None):
                    help="how long to wait for follow-up messages before "
                         "deciding the bot is done replying")
     p.add_argument("--max-messages-per-step", type=int, default=25)
+    p.add_argument("--language",
+                   help="answer language to select before walking, e.g. "
+                        "'Gujarati'. This is a global mode in the bot, so "
+                        "run once per language and merge the dumps.")
+    p.add_argument("--branch",
+                   help="only walk this top-level button, e.g. "
+                        "'Open Mukhpath Material'. Strongly recommended — "
+                        "the other menu entries aren't content.")
     p.add_argument("--follow-nav", action="store_true",
                    help="also follow Back/Menu style buttons")
+    p.add_argument("--include-features", action="store_true",
+                   help="also walk Practice/Progress/Help style buttons "
+                        "(never Reset/Quiz/Polls — those are always refused)")
     p.add_argument("--skip-media", action="store_true")
     p.add_argument("--no-resume", dest="resume", action="store_false", default=True)
     p.add_argument("--dry-run", action="store_true",
@@ -352,17 +420,37 @@ async def amain(args):
                                    exclusive=True) as conv:
         if args.dry_run:
             await conv.send_message("/start")
+            labels = []
             for msg in await scraper.drain(conv):
                 kinds = {button_kind(b) for row in (msg.buttons or []) for b in row}
+                row_labels = [b.text for row in (msg.buttons or []) for b in row]
+                labels += row_labels
                 print("-" * 60)
                 print(msg.text)
-                print("buttons:", [b.text for row in (msg.buttons or []) for b in row])
+                print("buttons:", row_labels)
                 print("kind:", kinds or "none", "| media:", bool(msg.media))
-            print("\nUse --mode with whichever kind you see above.")
+            refused = [b for b in labels if is_destructive_button(b)]
+            features = [b for b in labels if not is_destructive_button(b)
+                        and is_feature_button(b)]
+            print("-" * 60)
+            if refused:
+                print(f"will never be pressed: {', '.join(refused)}")
+            if features:
+                print(f"will be skipped as non-content: {', '.join(features)}")
+            print("mixed button kinds are fine — leave --mode on auto.")
+            print("Pick the content branch with --branch, and set --language "
+                  "once per run.")
             return
         await scraper.run(conv)
     scraper.save()
     print(f"\nCaptured {len(scraper.nodes)} nodes -> {args.output}")
+    if scraper.refused:
+        print(f"Never pressed (would change bot state): "
+              f"{', '.join(sorted(scraper.refused))}")
+    if scraper.skipped_features:
+        print(f"Skipped as non-content: "
+              f"{', '.join(sorted(scraper.skipped_features))} "
+              f"(--include-features to walk them)")
     print(f"Next: python3 scripts/parse_dump.py {args.output}")
     await client.disconnect()
 

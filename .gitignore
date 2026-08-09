@@ -13,8 +13,7 @@ venv/
 
 # Raw scraper output and downloaded media. Bulky, regenerable, and per
 # CLAUDE.md must stay out of the shipped app bundle.
-mukhpath_dump.json
-mukhpath_dump.state.json
+mukhpath_dump*.json
 downloads/
 
 __pycache__/

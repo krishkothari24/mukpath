@@ -45,6 +45,35 @@ First scraper run prompts for your phone number and a login code. That creates
 `mukhpath_scraper_session.session` — a live credential for your account.
 It's gitignored; don't commit or share it.
 
+## The bot's actual shape
+
+From a `--dry-run` against `@nc27mukhpathguidebot`:
+
+```
+/start
+├── "Choose your preferred answer language."
+│     [Transliteration] [English] [Gujarati]      <- global mode
+└── "Your main menu is ready."
+      [Open Mukhpath Material]  <- the only content branch
+      [Practice] [Progress] [Language] [Help]     <- bot features, skipped
+      [Quiz] [Polls] [Reset]                      <- never pressed
+```
+
+Three things follow from this:
+
+**Reset, Quiz and Polls are never pressed.** This is someone else's bot
+holding real user state — Reset wipes your progress, and Quiz/Polls submit
+answers and votes. The scraper refuses them at the point of click, and
+there's deliberately no flag to override it. `tests/test_buttons.py` pins
+this down against the live menu.
+
+**Answer language is a global mode, not a branch.** It changes what every
+later answer looks like, so it's set once per run with `--language` and you
+do one run per language, into separate dump files.
+
+**Button kinds are mixed** (`{'inline', 'keyboard'}` on the same menu).
+`--mode auto` resolves per button — leave it alone.
+
 ## 1. Map the menu by hand
 
 Open `@nc27mukhpathguidebot` in Telegram and click around. You need to know:
@@ -68,11 +97,33 @@ kind, and exits.
 
 ## 2. Scrape
 
+Start small. One language, one branch, a hard node cap, so you can look at
+the output before committing to a full walk:
+
 ```bash
-python3 tools/mukhpath_scraper.py --max-depth 6
+python3 tools/mukhpath_scraper.py \
+  --branch "Open Mukhpath Material" \
+  --language Gujarati \
+  --max-nodes 15 \
+  --output mukhpath_dump.gujarati.json
+```
+
+Then the full walk per language (drop `--max-nodes`), into separate files:
+
+```bash
+for lang in Gujarati Transliteration English; do
+  python3 tools/mukhpath_scraper.py \
+    --branch "Open Mukhpath Material" \
+    --language "$lang" \
+    --output "mukhpath_dump.${lang}.json"
+done
 ```
 
 Notes:
+
+- `--branch` keeps the walk inside the content tree. Without it you'd walk
+  Practice/Progress/Help too — harmless but pointless. Pass `--strip 1` to
+  the parser afterwards so the branch button doesn't become a text.
 
 - The walk is **replay-based**: for each menu path it re-sends `/start` and
   re-clicks from the top. Slower, but it's the only thing that works if the
@@ -100,8 +151,20 @@ unless you pass `--keep`.
 ## 4. Parse into seed data
 
 ```bash
-python3 scripts/parse_dump.py mukhpath_dump.json --text "Basic Mukhpath"
+python3 scripts/parse_dump.py mukhpath_dump.Gujarati.json \
+  --strip 1 --text "Basic Mukhpath"
 ```
+
+`--strip 1` drops the `--branch` button from the front of every path, so the
+real text name lands back at `path[0]`.
+
+**Open question — how the three languages combine.** `verses` wants
+`sanskrit`, `transliteration` and `meaning` on one row, but the bot serves
+one answer language at a time. Whether "Gujarati" changes only the *meaning*
+or also the verse rendering isn't knowable without looking at real output.
+Do the small `--max-nodes 15` run in two languages, diff them, and the
+mapping will be obvious — then the parser gets a merge mode that joins the
+dumps by menu path.
 
 `--text` scopes output to one top-level menu item. Do this: v1 is one
 complete text, not everything at once. Omit it to see what's available (the
@@ -134,6 +197,7 @@ Heuristics, all of them fallible — that's what `review.md` is for:
 ```bash
 python3 tests/test_parse_dump.py
 python3 tests/test_dotenv.py
+python3 tests/test_buttons.py
 ```
 
 Neither needs telethon or a Telegram session, so they run anywhere.
