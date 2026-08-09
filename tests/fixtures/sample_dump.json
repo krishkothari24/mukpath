@@ -1,0 +1,87 @@
+{
+  "bot": "nc27mukhpathguidebot",
+  "_note": "Hand-written stand-in for a real scrape, shaped like what tools/mukhpath_scraper.py emits. Exercises the parser's chrome filtering, verse splitting, script/transliteration/meaning classification, and audio handling.",
+  "nodes": [
+    {
+      "path": [],
+      "messages": [
+        {
+          "id": 1,
+          "text": "Jay Swaminarayan! Please choose an option:",
+          "buttons": ["Basic Mukhpath", "Satsang Diksha", "Main Menu"],
+          "button_kind": "inline"
+        }
+      ]
+    },
+    {
+      "path": ["Basic Mukhpath"],
+      "messages": [
+        {
+          "id": 2,
+          "text": "Choose a section:",
+          "buttons": ["Nitya Niyam", "Cheshta", "Back"],
+          "button_kind": "inline"
+        }
+      ]
+    },
+    {
+      "path": ["Basic Mukhpath", "Nitya Niyam"],
+      "messages": [
+        {
+          "id": 3,
+          "text": "Nitya Niyam\n\n1. શ્રી સ્વામિનારાયણો વિજયતે\nShri Swaminarayano Vijayate\nMeaning: Victory to Shri Swaminarayan.\n\n2. જય સ્વામિનારાયણ\nJay Swaminarayan\nMeaning: Salutations to Swaminarayan.",
+          "buttons": ["Back"],
+          "button_kind": "inline"
+        }
+      ]
+    },
+    {
+      "path": ["Basic Mukhpath", "Cheshta"],
+      "messages": [
+        {
+          "id": 4,
+          "text": "Cheshta — listen along:",
+          "buttons": [],
+          "button_kind": null
+        },
+        {
+          "id": 5,
+          "text": "धन्य धन्य हरि साधु आ\nDhanya dhanya hari sadhu aa\nअर्थ: Blessed indeed are the Lord and His holy sadhus.",
+          "buttons": [],
+          "media": {
+            "path": "downloads/basic-mukhpath-cheshta-5.ogg",
+            "mime": "audio/ogg",
+            "duration": 42
+          }
+        }
+      ]
+    },
+    {
+      "path": ["Satsang Diksha"],
+      "messages": [
+        {
+          "id": 6,
+          "text": "Select an option",
+          "buttons": ["Shloks 1-10", "Back"],
+          "button_kind": "inline"
+        }
+      ]
+    },
+    {
+      "path": ["Satsang Diksha", "Shloks 1-10"],
+      "messages": [
+        {
+          "id": 7,
+          "text": "શ્લોક 1. સ્વામિનારાયણઃ શ્રીમાન્\nSwaminarayanah Shriman\nઅર્થ: Shriman Swaminarayan.",
+          "buttons": ["Back"],
+          "button_kind": "inline"
+        }
+      ]
+    },
+    {
+      "path": ["Satsang Diksha", "Broken Branch"],
+      "error": "button 'Broken Branch' not offered here",
+      "messages": []
+    }
+  ]
+}
