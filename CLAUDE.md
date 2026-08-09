@@ -30,13 +30,23 @@ See `PHASES.md` for the build roadmap and current task breakdown.
 texts       (id, name, description)
 sections    (id, text_id, name, order)
 verses      (id, section_id, sanskrit, transliteration, meaning,
-             audio_url, order)
+             audio_url, order,
+             -- added once the real content shape was known (migration 002)
+             question, question_transliteration, question_gujarati,
+             reference, reference_gujarati, audio_url_english,
+             has_shlok, sanskrit_chunks, transliteration_chunks,
+             meaning_chunks)
 users       (id, name, role: parent | kid | teacher, parent_id nullable)
 progress    (user_id, verse_id, status: new|learning|review|mastered,
              next_review_date, ease_factor, interval_days)
 goals       (id, user_id, target_type: text|section, target_id,
              target_date)
 ```
+
+Only Satsang Diksha (10 of 50 verses) has an actual shlok. For the other
+four texts the memorised material is the *answer*, and `question` is the
+prompt — `has_shlok` distinguishes them. `*_chunks` hold the source's
+phrase boundaries, for phrase-at-a-time practice and playback.
 
 `progress` is a Leitner/SM-2 hybrid — new verses + due reviews form the
 daily practice queue. A goal's target_date back-calculates how many new

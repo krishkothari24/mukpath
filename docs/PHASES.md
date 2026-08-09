@@ -39,11 +39,28 @@ they get their own table — decide before writing migrations.
 - [x] Seed script to load Phase 0 output into the DB (`backend/scripts/seed.js`,
       upserts by id so re-running after hand-corrections is safe)
 - [x] REST endpoints: `GET /texts`, `GET /texts/:id/verses`, basic auth
-      (parent creates account, adds kid profiles under it) — smoke-tested
-      locally end to end
+      (parent creates account, adds kid profiles under it)
+- [x] Migration `002_verse_prompts.sql` — adds the question/reference/chunk
+      columns the real content needs. CLAUDE.md's `verses` was written
+      before the content shape was known, and 40 of the 50 verses have no
+      shlok: for those the question is the only prompt the practice screen
+      has, so without it there is nothing to ask.
+- [x] Test suite (`npm test`) — 16 checks: content shape, auth flow, token
+      expiry, forged-token rejection, cross-parent isolation
 - [ ] **(needs you)** Deploy to Railway, confirm it's reachable from a REST
       client — held off on creating cloud resources without a go-ahead;
       steps are in `backend/README.md`
+
+Verified locally: `npm run migrate && npm run seed && npm test` →
+5 texts / 5 sections / 50 verses seeded, 16/16 tests pass.
+
+Known gaps, deliberately not fixed:
+- No rate limiting on `POST /auth/login` — brute force is unthrottled.
+  Worth adding before the pilot grows past people you know personally.
+- `POST /kids` can create a `teacher` under a parent, which is odd
+  modelling — a teacher isn't a child of a parent account.
+- `db.js` sets `rejectUnauthorized: false` for Railway's Postgres TLS.
+  Standard practice for Railway, but it is unverified TLS.
 
 ## Phase 2 — Mobile app skeleton
 - [ ] Expo app, navigation shell (browse texts → sections → verses)

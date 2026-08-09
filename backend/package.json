@@ -1,0 +1,26 @@
+{
+  "name": "mukhpath-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Fastify + Postgres backend for the Mukhpath training app (Phase 1).",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "migrate": "node src/migrate.js",
+    "seed": "node scripts/seed.js",
+    "test": "node --test \"test/*.test.js\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@fastify/jwt": "^10.2.1",
+    "bcryptjs": "^2.4.3",
+    "dotenv": "^16.4.5",
+    "fastify": "^5.11.3",
+    "fastify-plugin": "^5.0.1",
+    "pg": "^8.12.0"
+  }
+}
