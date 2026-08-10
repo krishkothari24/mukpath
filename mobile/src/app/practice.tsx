@@ -4,9 +4,10 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { AudioBar } from '@/components/audio-bar';
 import { LanguageToggle } from '@/components/language-toggle';
+import { PhraseReveal } from '@/components/phrase-reveal';
 import { RecordingBar } from '@/components/recording-bar';
 import { ThemedText } from '@/components/themed-text';
-import { Banner, Button, Card, Centered, Column, Loading } from '@/components/ui';
+import { Banner, Button, Centered, Column, Loading } from '@/components/ui';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { verseAudioUri } from '@/lib/audio-cache';
@@ -116,7 +117,10 @@ export default function PracticeScreen() {
                 }`
               : 'Everything you’ve started is scheduled for a later day. Set a goal to pull more new verses in.'}
           </ThemedText>
-          <Button label="Back to library" onPress={() => router.replace('/')} />
+          <Button label="Practise anyway" variant="secondary" onPress={() => router.replace('/free-practice')} />
+          <View style={styles.retryGap}>
+            <Button label="Back to library" onPress={() => router.replace('/')} />
+          </View>
         </Centered>
       </>
     );
@@ -165,42 +169,13 @@ export default function PracticeScreen() {
 
           <LanguageToggle />
 
-          <Card>
-            {chunks.length === 0 ? (
-              <ThemedText type="small" themeColor="textSecondary">
-                Nothing recorded for this script — switch above.
-              </ThemedText>
-            ) : revealed === 0 ? (
-              <ThemedText type="small" themeColor="textSecondary">
-                Recite it from memory, then reveal to check.
-              </ThemedText>
-            ) : (
-              chunks.slice(0, revealed).map((chunk, index) => (
-                <ThemedText key={`${verse.id}-${index}`} style={styles.verseLine}>
-                  {chunk}
-                </ThemedText>
-              ))
-            )}
-
-            {!fullyRevealed && chunks.length > 0 ? (
-              <View style={styles.revealRow}>
-                <View style={styles.revealSlot}>
-                  <Button
-                    variant="secondary"
-                    label={revealed === 0 ? 'Reveal first phrase' : 'Next phrase'}
-                    onPress={() => setRevealed((count) => count + 1)}
-                  />
-                </View>
-                <View style={styles.revealSlot}>
-                  <Button
-                    variant="secondary"
-                    label="Show all"
-                    onPress={() => setRevealed(chunks.length)}
-                  />
-                </View>
-              </View>
-            ) : null}
-          </Card>
+          <PhraseReveal
+            chunks={chunks}
+            revealed={revealed}
+            onReveal={() => setRevealed((count) => count + 1)}
+            onRevealAll={() => setRevealed(chunks.length)}
+            keyPrefix={verse.id}
+          />
 
           {/*
             Audio and grading only after the answer is up. Offering "easy"
@@ -252,9 +227,6 @@ const styles = StyleSheet.create({
   eyebrow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   badge: { paddingHorizontal: Spacing.two, paddingVertical: Spacing.half, borderRadius: 6 },
   question: { fontSize: 24, lineHeight: 34, fontWeight: '600' },
-  verseLine: { fontSize: 20, lineHeight: 34 },
-  revealRow: { flexDirection: 'row', gap: Spacing.two, marginTop: Spacing.two },
-  revealSlot: { flex: 1 },
   gradeBlock: { gap: Spacing.two },
   grades: { flexDirection: 'row', gap: Spacing.two },
   gradeSlot: { flex: 1 },

@@ -88,13 +88,13 @@ export default function SectionsScreen() {
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
         ListHeaderComponent={
-          text.description ? (
-            <Column style={styles.intro}>
+          <Column style={styles.intro}>
+            {text.description ? (
               <ThemedText type="small" themeColor="textSecondary">
                 {text.description}
               </ThemedText>
-            </Column>
-          ) : null
+            ) : null}
+          </Column>
         }
         renderItem={({ item }) => (
           <Column>

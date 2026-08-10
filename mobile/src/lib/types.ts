@@ -85,10 +85,24 @@ export type Goal = {
   target_name: string | null;
   text_id: string | null;
   target_date: string;
+  /** The plan this goal was created as part of, or null for a solo goal. */
+  plan_id: string | null;
   total: number;
   started: number;
   mastered: number;
   pace: { remaining: number; daysLeft: number; perDay: number; behind: boolean };
+};
+
+/**
+ * A plan: one target_date, one or more texts/sections, each its own goal
+ * (own pace) but grouped under one id so the app can show and remove them
+ * as a unit — see backend/src/migrations/006_plans.sql.
+ */
+export type Plan = {
+  id: string;
+  target_date: string;
+  created_at: string;
+  goals: Goal[];
 };
 
 export type User = {

@@ -84,6 +84,13 @@ export default function VersesScreen() {
         ListHeaderComponent={
           <Column style={styles.header}>
             <LanguageToggle />
+            {verses.length ? (
+              <Button
+                variant="secondary"
+                label="Practice this section"
+                onPress={() => router.push(`/free-practice?sectionId=${sectionId}`)}
+              />
+            ) : null}
           </Column>
         }
         renderItem={({ item, index }) => {
@@ -101,7 +108,7 @@ export default function VersesScreen() {
                 title={`${index + 1}. ${title}`}
                 subtitle={subtitle}
                 meta={verseReference(item, language) || null}
-                onPress={() => router.push(`/verse/${item.id}`)}
+                onPress={() => router.push(`/free-practice?sectionId=${sectionId}&focus=${item.id}`)}
               />
             </Column>
           );

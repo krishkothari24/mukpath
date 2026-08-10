@@ -1,6 +1,7 @@
+import DateTimePicker, { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { Stack } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Banner, Button, Card, Centered, Column, Loading } from '@/components/ui';
@@ -8,14 +9,9 @@ import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { disableReminder, enableReminder, getReminderSettings, type ReminderSettings } from '@/lib/reminders';
 
-// Presets rather than a free time picker: a small pilot doesn't need one,
-// and it's one fewer native dependency (no date/time picker library) for a
-// choice that's really "morning, after school, or evening".
-const PRESETS: { label: string; hour: number; minute: number }[] = [
-  { label: 'Morning · 8:00', hour: 8, minute: 0 },
-  { label: 'After school · 16:30', hour: 16, minute: 30 },
-  { label: 'Evening · 19:00', hour: 19, minute: 0 },
-];
+function pad(n: number): string {
+  return String(n).padStart(2, '0');
+}
 
 /**
  * One daily local reminder — see lib/reminders.ts for why it's local rather
@@ -28,6 +24,11 @@ export default function RemindersScreen() {
   const [error, setError] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
+  const [showIosPicker, setShowIosPicker] = useState(false);
+  // Draft time for the inline iOS picker, seeded from the current setting
+  // when it's opened; Android has no equivalent draft state since its
+  // dialog commits (or is cancelled) atomically.
+  const [draftTime, setDraftTime] = useState<Date | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -86,6 +87,23 @@ export default function RemindersScreen() {
     }
   };
 
+  const openPicker = () => {
+    const seed = new Date();
+    seed.setHours(settings.hour, settings.minute, 0, 0);
+    if (Platform.OS === 'android') {
+      DateTimePickerAndroid.open({
+        value: seed,
+        mode: 'time',
+        onChange: (_event, selectedDate) => {
+          if (selectedDate) pick(selectedDate.getHours(), selectedDate.getMinutes());
+        },
+      });
+    } else {
+      setDraftTime(seed);
+      setShowIosPicker(true);
+    }
+  };
+
   return (
     <>
       <Stack.Screen options={{ title: 'Reminders' }} />
@@ -100,32 +118,39 @@ export default function RemindersScreen() {
 
           <Card>
             <ThemedText type="smallBold">Remind me</ThemedText>
-            <View style={styles.presets}>
-              {PRESETS.map((preset) => {
-                const selected =
-                  settings.enabled && settings.hour === preset.hour && settings.minute === preset.minute;
-                return (
-                  <Pressable
-                    key={preset.label}
-                    accessibilityRole="button"
-                    accessibilityState={{ selected, disabled: busy }}
-                    disabled={busy}
-                    onPress={() => pick(preset.hour, preset.minute)}
-                    style={[
-                      styles.chip,
-                      {
-                        borderColor: selected ? theme.tint : theme.border,
-                        backgroundColor: selected ? theme.tint : 'transparent',
-                        opacity: busy ? 0.6 : 1,
-                      },
-                    ]}>
-                    <ThemedText type="small" style={{ color: selected ? theme.tintText : theme.text }}>
-                      {preset.label}
-                    </ThemedText>
-                  </Pressable>
-                );
-              })}
-            </View>
+
+            <TimeField
+              value={settings.enabled ? `${pad(settings.hour)}:${pad(settings.minute)}` : 'Off'}
+              onPress={openPicker}
+              disabled={busy}
+            />
+
+            {/* Android's picker is its own dialog (DateTimePickerAndroid.open,
+                in openPicker); iOS has no such dialog, so it renders inline
+                here, committed by the Set button. */}
+            {showIosPicker && draftTime ? (
+              <>
+                <DateTimePicker
+                  value={draftTime}
+                  mode="time"
+                  display="spinner"
+                  onChange={(_event, selectedDate) => {
+                    if (selectedDate) setDraftTime(selectedDate);
+                  }}
+                />
+                <View style={styles.iosPickerActions}>
+                  <Button variant="secondary" label="Cancel" onPress={() => setShowIosPicker(false)} />
+                  <Button
+                    label="Set reminder"
+                    busy={busy}
+                    onPress={async () => {
+                      await pick(draftTime.getHours(), draftTime.getMinutes());
+                      setShowIosPicker(false);
+                    }}
+                  />
+                </View>
+              </>
+            ) : null}
 
             {settings.enabled ? (
               <Button variant="secondary" label="Turn off reminders" onPress={turnOff} busy={busy} />
@@ -141,16 +166,42 @@ export default function RemindersScreen() {
   );
 }
 
+/** Opens the platform time picker; shows the picked time like the rest of
+ *  the input surfaces (Field's border/height), but isn't itself editable. */
+function TimeField({
+  value,
+  onPress,
+  disabled,
+}: {
+  value: string;
+  onPress: () => void;
+  disabled: boolean;
+}) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={onPress}
+      style={[
+        styles.input,
+        { borderColor: theme.border, backgroundColor: theme.backgroundElement, opacity: disabled ? 0.6 : 1 },
+      ]}>
+      <ThemedText type="default">{value}</ThemedText>
+    </Pressable>
+  );
+}
+
 const styles = StyleSheet.create({
   scroll: { paddingVertical: Spacing.three, paddingBottom: Spacing.six },
   body: { gap: Spacing.three },
   retry: { marginTop: Spacing.three },
-  presets: { gap: Spacing.two },
-  chip: {
-    borderWidth: StyleSheet.hairlineWidth,
+  iosPickerActions: { flexDirection: 'row', gap: Spacing.two },
+  input: {
+    minHeight: 48,
     borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

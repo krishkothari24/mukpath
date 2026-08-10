@@ -191,7 +191,7 @@ const styles = StyleSheet.create({
   button: {
     minHeight: 48,
     borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1.5,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: Spacing.four,
@@ -200,7 +200,7 @@ const styles = StyleSheet.create({
   input: {
     minHeight: 48,
     borderRadius: 10,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderWidth: 1.5,
     paddingHorizontal: Spacing.three,
     fontSize: 16,
   },

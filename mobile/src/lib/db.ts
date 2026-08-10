@@ -101,6 +101,10 @@ CREATE TABLE IF NOT EXISTS goals (
   target_name TEXT,
   text_id     TEXT,
   target_date TEXT NOT NULL,
+  -- The plan this goal belongs to (NULL for a goal set outside the
+  -- multi-select form), so the Goals screen can group and remove several
+  -- texts as one unit. See backend/src/migrations/006_plans.sql.
+  plan_id     TEXT,
   total       INTEGER NOT NULL DEFAULT 0,
   started     INTEGER NOT NULL DEFAULT 0,
   mastered    INTEGER NOT NULL DEFAULT 0
@@ -127,20 +131,27 @@ CREATE TABLE IF NOT EXISTS practice_log (
 //   1 — Phase 2: content cache and prefs
 //   2 — Phase 3: progress, pending_reviews, goals, progress.started_on
 //   3 — Phase 4: practice_log (streak days)
-const SCHEMA_VERSION = 3;
+//   4 — goals.plan_id (multi-text plans)
+const SCHEMA_VERSION = 4;
 
 async function migrateSchema(database: SQLite.SQLiteDatabase): Promise<void> {
   const row = await database.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
   if ((row?.user_version ?? 0) >= SCHEMA_VERSION) return;
 
-  const columns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(progress)');
-  if (!columns.some((column) => column.name === 'started_on')) {
+  const progressColumns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(progress)');
+  if (!progressColumns.some((column) => column.name === 'started_on')) {
     await database.execAsync('ALTER TABLE progress ADD COLUMN started_on TEXT');
   }
 
+  const goalColumns = await database.getAllAsync<{ name: string }>('PRAGMA table_info(goals)');
+  if (!goalColumns.some((column) => column.name === 'plan_id')) {
+    await database.execAsync('ALTER TABLE goals ADD COLUMN plan_id TEXT');
+  }
+
   // CREATE TABLE IF NOT EXISTS in SCHEMA already covers this for anyone
-  // upgrading straight to version 3; nothing else to backfill — a device
-  // with no local history simply starts its streak at zero.
+  // upgrading straight to version 4; nothing else to backfill — a device
+  // with no local history simply starts its streak at zero, and existing
+  // goals just have no plan until the next sync assigns one.
 
   await database.execAsync(`PRAGMA user_version = ${SCHEMA_VERSION}`);
 }
@@ -227,6 +238,16 @@ export async function listSections(textId: string): Promise<Section[]> {
   );
 }
 
+/** Every section, across all texts — lets the library screen skip straight
+ *  to a text's section when it only has one, instead of an in-between list
+ *  of one item. */
+export async function listAllSections(): Promise<Section[]> {
+  const database = await getDatabase();
+  return database.getAllAsync<Section>(
+    'SELECT id, text_id, name, order_index FROM sections ORDER BY text_id, order_index',
+  );
+}
+
 export async function getText(textId: string): Promise<Text | null> {
   const database = await getDatabase();
   return database.getFirstAsync<Text>('SELECT id, name, description FROM texts WHERE id = ?', [
@@ -251,10 +272,29 @@ export async function listVerses(sectionId: string): Promise<Verse[]> {
   return rows.map(toVerse);
 }
 
-export async function getVerse(verseId: string): Promise<Verse | null> {
+/**
+ * Every verse that's been started, weakest first — lowest ease factor, then
+ * most lapses, so the ones that keep slipping surface before ones that are
+ * merely not-yet-due.
+ *
+ * Feeds "Practise anyway" (see app/index.tsx `PracticeCard`): once today's
+ * SRS queue is empty there's nothing *due*, but a kid who wants to keep
+ * going should land on the verses giving them the most trouble, not a dead
+ * end. It's free practice, not a review — no grading, no `progress` write —
+ * so drilling here can't be mistaken for a real review and can't skew the
+ * schedule (same guarantee as `app/free-practice.tsx`).
+ */
+export async function listWeakestVerses(limit = 30): Promise<Verse[]> {
   const database = await getDatabase();
-  const row = await database.getFirstAsync<VerseRow>('SELECT * FROM verses WHERE id = ?', [verseId]);
-  return row ? toVerse(row) : null;
+  const rows = await database.getAllAsync<VerseRow>(
+    `SELECT v.* FROM verses v
+       JOIN progress p ON p.verse_id = v.id
+      WHERE p.status <> 'new'
+      ORDER BY p.ease_factor ASC, p.lapses DESC, v.text_id, v.order_index
+      LIMIT ?`,
+    [limit],
+  );
+  return rows.map(toVerse);
 }
 
 /** Verse counts keyed by section id — one query for a whole list screen. */
@@ -477,8 +517,8 @@ export async function replaceGoals(goals: Goal[]): Promise<void> {
     for (const goal of goals) {
       await txn.runAsync(
         `INSERT INTO goals (id, target_type, target_id, target_name, text_id, target_date,
-                            total, started, mastered)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                            plan_id, total, started, mastered)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           goal.id,
           goal.target_type,
@@ -486,6 +526,7 @@ export async function replaceGoals(goals: Goal[]): Promise<void> {
           goal.target_name,
           goal.text_id,
           goal.target_date,
+          goal.plan_id,
           goal.total,
           goal.started,
           goal.mastered,

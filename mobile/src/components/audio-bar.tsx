@@ -1,4 +1,5 @@
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
+import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -10,6 +11,10 @@ function clockTime(seconds: number): string {
   const whole = Math.floor(seconds);
   return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
 }
+
+// expo-audio clamps playbackRate to 0.0–2.0 on iOS and 0.1–2.0 on Android
+// (AVPlayer/ExoPlayer limits), so anything past 2x is not achievable here.
+const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
 
 /**
  * Reference recitation for a verse.
@@ -26,6 +31,7 @@ export function AudioBar({ url, label }: { url: string; label: string }) {
   const theme = useTheme();
   const player = useAudioPlayer(url);
   const status = useAudioPlayerStatus(player);
+  const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(1);
 
   const duration = status.duration ?? 0;
   const position = status.currentTime ?? 0;
@@ -39,6 +45,12 @@ export function AudioBar({ url, label }: { url: string; label: string }) {
     // Replaying after the track ended needs an explicit rewind.
     if (duration > 0 && position >= duration - 0.25) player.seekTo(0);
     player.play();
+  };
+
+  const cycleSpeed = () => {
+    const next = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
+    setSpeed(next);
+    player.setPlaybackRate(next, 'high');
   };
 
   return (
@@ -71,6 +83,14 @@ export function AudioBar({ url, label }: { url: string; label: string }) {
           <ThemedText type="small">-5s</ThemedText>
         </Pressable>
 
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Playback speed"
+          onPress={cycleSpeed}
+          style={[styles.secondaryButton, { borderColor: theme.border }]}>
+          <ThemedText type="small">{speed}x</ThemedText>
+        </Pressable>
+
         <View style={[styles.track, { backgroundColor: theme.backgroundSelected }]}>
           <View
             style={[styles.trackFill, { backgroundColor: theme.tint, width: `${progress * 100}%` }]}
@@ -78,7 +98,9 @@ export function AudioBar({ url, label }: { url: string; label: string }) {
         </View>
       </View>
 
-      {status.error ? (
+      {/* expo-audio on SDK 54 has no dedicated error field on AudioStatus (added in
+          a later version); playbackState is the closest signal available. */}
+      {status.playbackState === 'error' || status.playbackState === 'failed' ? (
         <ThemedText type="small" themeColor="danger">
           Couldn&apos;t load this recording.
         </ThemedText>

@@ -1,5 +1,5 @@
 import { API_URL, REQUEST_TIMEOUT_MS } from '@/lib/config';
-import type { Goal, ProgressRow, Text, User, VerseApiRow } from '@/lib/types';
+import type { Goal, Plan, ProgressRow, Text, User, VerseApiRow } from '@/lib/types';
 
 export class ApiError extends Error {
   status: number;
@@ -117,4 +117,21 @@ export const api = {
 
   deleteGoal: (token: string, id: string) =>
     request<null>(`/goals/${encodeURIComponent(id)}`, { method: 'DELETE', token }),
+
+  plans: (token: string, date: string) =>
+    request<Plan[]>(`/plans?date=${encodeURIComponent(date)}`, { token }),
+
+  /** One or more texts/sections toward the same date, as a single group. */
+  createPlan: (
+    token: string,
+    plan: {
+      target_date: string;
+      targets: { target_type: 'text' | 'section'; target_id: string }[];
+      today: string;
+    },
+  ) => request<Plan>('/plans', { method: 'POST', token, body: plan }),
+
+  /** Removes the plan and every goal under it, in one call. */
+  deletePlan: (token: string, id: string) =>
+    request<null>(`/plans/${encodeURIComponent(id)}`, { method: 'DELETE', token }),
 };

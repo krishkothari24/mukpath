@@ -7,9 +7,9 @@ import { Banner, Button, Card, Centered, Column, ListRow, Loading } from '@/comp
 import { Spacing } from '@/constants/theme';
 import { useAuth } from '@/lib/auth';
 import { useContent } from '@/lib/content';
-import { listTexts, verseCountsByText } from '@/lib/db';
+import { listAllSections, listTexts, verseCountsByText } from '@/lib/db';
 import { usePractice } from '@/lib/practice';
-import type { Text as TextRow } from '@/lib/types';
+import type { Section, Text as TextRow } from '@/lib/types';
 
 export default function TextsScreen() {
   const router = useRouter();
@@ -18,6 +18,7 @@ export default function TextsScreen() {
 
   const [texts, setTexts] = useState<TextRow[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
+  const [sectionsByText, setSectionsByText] = useState<Record<string, Section[]>>({});
   const [loading, setLoading] = useState(true);
   const [readError, setReadError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -31,10 +32,19 @@ export default function TextsScreen() {
       setLoading(true);
       setReadError(null);
       try {
-        const [rows, verseCounts] = await Promise.all([listTexts(), verseCountsByText()]);
+        const [rows, verseCounts, allSections] = await Promise.all([
+          listTexts(),
+          verseCountsByText(),
+          listAllSections(),
+        ]);
         if (cancelled) return;
         setTexts(rows);
         setCounts(verseCounts);
+        const grouped: Record<string, Section[]> = {};
+        for (const section of allSections) {
+          (grouped[section.text_id] ??= []).push(section);
+        }
+        setSectionsByText(grouped);
       } catch (err) {
         if (!cancelled) setReadError(err instanceof Error ? err.message : 'Could not read the library');
       } finally {
@@ -46,6 +56,19 @@ export default function TextsScreen() {
       cancelled = true;
     };
   }, [ready, revision, attempt]);
+
+  // A text with exactly one section (every text today) skips straight to it
+  // — the in-between "sections of this text" screen has nothing to add when
+  // there's only one row to pick. A text with more than one still opens that
+  // screen so the learner can choose.
+  const openText = (textId: string) => {
+    const sections = sectionsByText[textId];
+    if (sections?.length === 1) {
+      router.push(`/section/${sections[0].id}`);
+    } else {
+      router.push(`/text/${textId}`);
+    }
+  };
 
   // The practice card is the whole point of the app, so it sits above the
   // library rather than behind a tab: the default action on opening should be
@@ -107,7 +130,7 @@ export default function TextsScreen() {
               title={item.name}
               subtitle={item.description || null}
               meta={counts[item.id] ? `${counts[item.id]}` : null}
-              onPress={() => router.push(`/text/${item.id}`)}
+              onPress={() => openText(item.id)}
             />
           </Column>
         )}
@@ -121,6 +144,9 @@ export default function TextsScreen() {
                 ? `Content last updated ${lastSync.toLocaleDateString()}`
                 : 'Content not downloaded yet'}
             </ThemedText>
+            <View style={styles.signOut}>
+              <Button variant="secondary" label="Settings" onPress={() => router.push('/settings')} />
+            </View>
             <View style={styles.signOut}>
               <Button
                 variant="secondary"
@@ -185,7 +211,10 @@ function PracticeCard() {
 
       <Button
         label={total > 0 ? 'Start practice' : 'Practise anyway'}
-        onPress={() => router.push('/practice')}
+        // Nothing due routes into free practice on the weakest started
+        // verses, not the SRS screen — that screen has nothing queued and
+        // would just land back on "Nothing due today" (see app/practice.tsx).
+        onPress={() => router.push(total > 0 ? '/practice' : '/free-practice')}
       />
       <View style={styles.practiceCardActions}>
         <View style={styles.practiceCardAction}>

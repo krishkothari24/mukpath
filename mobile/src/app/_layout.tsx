@@ -1,13 +1,15 @@
+import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { setAudioModeAsync } from 'expo-audio';
 import * as Notifications from 'expo-notifications';
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider, useRouter, useSegments } from 'expo-router';
+import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { useColorScheme } from 'react-native';
 
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { ContentProvider, useContent } from '@/lib/content';
 import { PracticeProvider } from '@/lib/practice';
+import { ThemePreferenceProvider, useThemePreference } from '@/lib/theme-preference';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -49,17 +51,16 @@ function RootNavigator() {
       <Stack.Screen name="login" options={{ title: 'Sign in', headerShown: false }} />
       <Stack.Screen name="text/[textId]" options={{ title: '' }} />
       <Stack.Screen name="section/[sectionId]" options={{ title: '' }} />
-      <Stack.Screen name="verse/[verseId]" options={{ title: '' }} />
       <Stack.Screen name="practice" options={{ title: 'Practice' }} />
+      <Stack.Screen name="free-practice" options={{ title: 'Practice' }} />
       <Stack.Screen name="goals" options={{ title: 'Goals' }} />
       <Stack.Screen name="reminders" options={{ title: 'Reminders' }} />
+      <Stack.Screen name="settings" options={{ title: 'Settings' }} />
     </Stack>
   );
 }
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
-
   // Recitation should still play when the ringer switch is silenced — kids
   // practise with the phone on silent.
   useEffect(() => {
@@ -69,14 +70,28 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+    <ThemePreferenceProvider>
       <AuthProvider>
         <ContentProvider>
           <PracticeProvider>
-            <RootNavigator />
+            <ThemedNavigator />
           </PracticeProvider>
         </ContentProvider>
       </AuthProvider>
+    </ThemePreferenceProvider>
+  );
+}
+
+/** Splits off from RootLayout so it can read the resolved scheme — which
+ *  depends on ThemePreferenceProvider — to drive nav chrome and the
+ *  status bar, alongside whatever `useTheme()` already does for screens. */
+function ThemedNavigator() {
+  const { scheme } = useThemePreference();
+
+  return (
+    <ThemeProvider value={scheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <StatusBar style={scheme === 'dark' ? 'light' : 'dark'} />
+      <RootNavigator />
     </ThemeProvider>
   );
 }

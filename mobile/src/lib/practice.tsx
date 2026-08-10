@@ -41,6 +41,13 @@ type PracticeState = {
   grade: (verseId: string, grade: Grade) => Promise<void>;
   createGoal: (target: { target_type: 'text' | 'section'; target_id: string; target_date: string }) => Promise<void>;
   deleteGoal: (id: string) => Promise<void>;
+  /** One or more texts/sections toward the same date, grouped as one plan. */
+  createPlan: (plan: {
+    target_date: string;
+    targets: { target_type: 'text' | 'section'; target_id: string }[];
+  }) => Promise<void>;
+  /** Removes the plan and every goal under it. */
+  deletePlan: (id: string) => Promise<void>;
   sync: () => Promise<void>;
   /** Bumped whenever progress or goals change, so screens re-query. */
   revision: number;
@@ -221,6 +228,27 @@ export function PracticeProvider({ children }: { children: React.ReactNode }) {
     [sync, token],
   );
 
+  const createPlan = useCallback(
+    async (plan: {
+      target_date: string;
+      targets: { target_type: 'text' | 'section'; target_id: string }[];
+    }) => {
+      if (!token) throw new Error('Sign in to set a plan');
+      await api.createPlan(token, { ...plan, today });
+      await sync();
+    },
+    [sync, today, token],
+  );
+
+  const deletePlan = useCallback(
+    async (id: string) => {
+      if (!token) throw new Error('Sign in to change plans');
+      await api.deletePlan(token, id);
+      await sync();
+    },
+    [sync, token],
+  );
+
   const value = useMemo<PracticeState>(
     () => ({
       ready,
@@ -233,13 +261,17 @@ export function PracticeProvider({ children }: { children: React.ReactNode }) {
       grade,
       createGoal,
       deleteGoal,
+      createPlan,
+      deletePlan,
       sync,
       revision,
       today,
     }),
     [
       createGoal,
+      createPlan,
       deleteGoal,
+      deletePlan,
       error,
       goals,
       grade,

@@ -37,8 +37,10 @@ export async function saveRecording(verseId: string, tempUri: string): Promise<s
   if (dir.exists) dir.delete();
   dir.create({ intermediates: true });
 
+  // Destination filename is always fresh (timestamped), so there's nothing
+  // to overwrite; SDK 54's File.move() is synchronous and takes no options.
   const destination = new File(dir, `take-${Date.now()}.m4a`);
-  await new File(tempUri).move(destination, { overwrite: true });
+  new File(tempUri).move(destination);
   return destination.uri;
 }
 

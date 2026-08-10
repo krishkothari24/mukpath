@@ -311,6 +311,99 @@ export default async function practiceRoutes(fastify) {
     if (rowCount === 0) return reply.code(404).send({ error: "goal not found" });
     return reply.code(204).send();
   });
+
+  fastify.get("/plans", auth, async (request) => {
+    return activePlans(request.user.sub, requestDate(request.query?.date));
+  });
+
+  /**
+   * Create a plan: one target_date, one or more targets, each becoming its
+   * own goal row under the new plan. Same upsert semantics as POST /goals
+   * per target — re-picking a text that already has a goal moves it (date
+   * and plan) rather than starting a second race for it.
+   */
+  fastify.post("/plans", auth, async (request, reply) => {
+    const { target_date: targetDate, targets } = request.body ?? {};
+
+    if (typeof targetDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
+      return reply.code(400).send({ error: "target_date must be YYYY-MM-DD" });
+    }
+    if (!Array.isArray(targets) || targets.length === 0) {
+      return reply.code(400).send({ error: "targets must be a non-empty array" });
+    }
+    for (const target of targets) {
+      if (!target || !["text", "section"].includes(target.target_type)) {
+        return reply.code(400).send({ error: "each target needs a target_type of text or section" });
+      }
+      if (typeof target.target_id !== "string" || !target.target_id) {
+        return reply.code(400).send({ error: "each target needs a target_id" });
+      }
+    }
+
+    const client = await pool.connect();
+    let planId;
+    try {
+      await client.query("BEGIN");
+
+      for (const target of targets) {
+        const table = target.target_type === "text" ? "texts" : "sections";
+        const exists = await client.query(`SELECT id FROM ${table} WHERE id = $1`, [
+          target.target_id,
+        ]);
+        if (exists.rowCount === 0) {
+          await client.query("ROLLBACK");
+          return reply.code(404).send({ error: `unknown ${target.target_type}: ${target.target_id}` });
+        }
+      }
+
+      const plan = await client.query(
+        `INSERT INTO plans (user_id, target_date) VALUES ($1, $2) RETURNING id`,
+        [request.user.sub, targetDate],
+      );
+      planId = plan.rows[0].id;
+
+      for (const target of targets) {
+        await client.query(
+          `INSERT INTO goals (user_id, target_type, target_id, target_date, plan_id)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (user_id, target_type, target_id)
+             DO UPDATE SET target_date = EXCLUDED.target_date, plan_id = EXCLUDED.plan_id`,
+          [request.user.sub, target.target_type, target.target_id, targetDate, planId],
+        );
+      }
+
+      // A re-picked text can move from an older plan into this one (the
+      // upsert above just changed its plan_id) — if that emptied the older
+      // plan, drop it rather than leaving a goal-less plan behind.
+      await client.query(
+        `DELETE FROM plans
+          WHERE user_id = $1 AND id <> $2
+            AND id NOT IN (SELECT plan_id FROM goals WHERE plan_id IS NOT NULL)`,
+        [request.user.sub, planId],
+      );
+
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK");
+      throw err;
+    } finally {
+      client.release();
+    }
+
+    const plans = await activePlans(request.user.sub, requestDate(request.body?.today));
+    const created = plans.find((item) => item.id === planId);
+    return reply.code(201).send(created);
+  });
+
+  /** Deletes the plan and, via ON DELETE CASCADE, every goal under it. */
+  fastify.delete("/plans/:id", auth, async (request, reply) => {
+    const { rowCount } = await pool.query("DELETE FROM plans WHERE id = $1 AND user_id = $2", [
+      request.params.id,
+      request.user.sub,
+    ]);
+    if (rowCount === 0) return reply.code(404).send({ error: "plan not found" });
+    return reply.code(204).send();
+  });
 }
 
 /**
@@ -322,7 +415,7 @@ export default async function practiceRoutes(fastify) {
  */
 async function activeGoals(userId, today) {
   const { rows } = await pool.query(
-    `SELECT g.id, g.target_type, g.target_id, g.target_date,
+    `SELECT g.id, g.target_type, g.target_id, g.target_date, g.plan_id,
             CASE WHEN g.target_type = 'text' THEN t.name ELSE sec.name END AS target_name,
             CASE WHEN g.target_type = 'text' THEN g.target_id ELSE sec.text_id END AS text_id,
             stats.total, stats.started, stats.mastered
@@ -357,12 +450,36 @@ async function activeGoals(userId, today) {
       target_name: row.target_name,
       text_id: row.text_id,
       target_date: targetDate,
+      plan_id: row.plan_id,
       total: row.total,
       started: row.started,
       mastered: row.mastered,
       pace,
     };
   });
+}
+
+/**
+ * Plans, each carrying the goals created under it.
+ *
+ * A plan with no surviving goals (its last target got deleted or moved
+ * elsewhere) shouldn't appear — nothing left to show or manage as a group.
+ */
+async function activePlans(userId, today) {
+  const goals = await activeGoals(userId, today);
+  const { rows: planRows } = await pool.query(
+    `SELECT id, target_date, created_at FROM plans WHERE user_id = $1 ORDER BY target_date`,
+    [userId],
+  );
+
+  return planRows
+    .map((plan) => ({
+      id: plan.id,
+      target_date: toDateString(plan.target_date),
+      created_at: plan.created_at.toISOString(),
+      goals: goals.filter((goal) => goal.plan_id === plan.id),
+    }))
+    .filter((plan) => plan.goals.length > 0);
 }
 
 function serialiseProgress(row) {
